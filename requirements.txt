@@ -1,0 +1,11 @@
+debugpy
+fastapi
+sqlalchemy
+pydantic
+uvicorn
+passlib[bcrypt]
+pytest
+pydantic-settings
+python-jose
+redis[async]
+requests
