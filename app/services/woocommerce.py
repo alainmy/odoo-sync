@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -44,7 +43,7 @@ def wc_request(method: str, path: str, params: Optional[Dict[str, Any]] = None) 
     auth = (WC_CONSUMER_KEY, WC_CONSUMER_SECRET)
     headers = {
         "User-Agent": "Mozilla/5.0",
-        "Host": "woocommerce.localhost"
+        # "Host": "woocommerce.localhost"
     }
     # Permitir desactivar SSL verification para certificados autofirmados
     verify_ssl = False if url.startswith("https://") else True
@@ -65,7 +64,7 @@ def wc_request_post(method: str, path: str, data: Optional[Dict[str, Any]] = Non
     auth = (WC_CONSUMER_KEY, WC_CONSUMER_SECRET)
     headers = {
         "User-Agent": "Mozilla/5.0",
-        "Host": "woocommerce.localhost"
+        # "Host": "woocommerce.localhost"
     }
     # Permitir desactivar SSL verification para certificados autofirmados
     r = requests.request(
