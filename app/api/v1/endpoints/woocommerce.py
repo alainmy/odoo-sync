@@ -96,7 +96,8 @@ def sync_status(task_id: str):
     return task
 
 
-@router.post("/products/sync-from-odoo", response_model=OdooToWooCommerceSyncResponse)
+@router.post("/products/sync-from-odoo",
+             response_model=OdooToWooCommerceSyncResponse)
 def sync_products_from_odoo(request: OdooToWooCommerceRequest,
                             db: Session = Depends(get_db)):
     """
@@ -128,7 +129,8 @@ def sync_products_from_odoo(request: OdooToWooCommerceRequest,
             odoo_product=odoo_product,
             wc_product_data=wc_product_data,
             create_if_not_exists=request.create_if_not_exists,
-            update_existing=request.update_existing
+            update_existing=request.update_existing,
+            db=db
         )
 
         results.append(sync_result)

@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     odoo_db: str = "c4e"
     odoo_username: str = "admin"
     odoo_password: str = "admin"
-    wc_base_url: str = "http://woocommerce_wordpress:8000"
+    wc_base_url: str = "https://host.docker.internal/wp-json/wc/v3"
     wc_consumer_key: str = "ck_eb847e061f9dfc3ddd9a21e3e2eaa23988e41514"
     wc_consumer_secret: str = "cs_61877797f37e8a43aff18da63bbc42c89ba85cf2"
     class Config:

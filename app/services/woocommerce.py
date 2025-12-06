@@ -1,6 +1,8 @@
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
+from tkinter import W
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 from app.models.product_models import (
     OdooProduct,
@@ -19,10 +21,21 @@ import requests
 import logging
 from app.core.config import settings
 from app.schemas.schemas import TASKS, Product
+from app.crud.admin import get_product_sync_by_odoo_id
+from app.db.session import get_db
+from woocommerce import API
 
 WC_BASE_URL = settings.wc_base_url
 WC_CONSUMER_KEY = settings.wc_consumer_key
 WC_CONSUMER_SECRET = settings.wc_consumer_secret
+wcapi = API(
+    url=WC_BASE_URL,
+    consumer_key=WC_CONSUMER_KEY,
+    consumer_secret=WC_CONSUMER_SECRET,
+    version="wc/v3",
+    user_agent="Mozilla/5.0",
+    verify_ssl=False
+)
 
 
 def wc_request(method: str, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
@@ -39,6 +52,26 @@ def wc_request(method: str, path: str, params: Optional[Dict[str, Any]] = None) 
     r = requests.request(
         method, url, headers=headers,
         params=params, auth=auth, timeout=30, verify=verify_ssl
+    )
+    if not r.ok:
+        raise HTTPException(status_code=r.status_code,
+                            detail=f"WooCommerce error: {r.text}")
+    return r.json()
+
+
+def wc_request_post(method: str, path: str, data: Optional[Dict[str, Any]] = None) -> Any:
+    url = f"{WC_BASE_URL}{path}"
+    # Consumir siempre vía Nginx reverse proxy (https://woocommerce.localhost)
+    # Si el contenedor no resuelve woocommerce.localhost, usa la IP del host o agrega al /etc/hosts
+    auth = (WC_CONSUMER_KEY, WC_CONSUMER_SECRET)
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Host": "woocommerce.localhost"
+    }
+    # Permitir desactivar SSL verification para certificados autofirmados
+    r = requests.request(
+        method, url, headers=headers,
+        json=data, auth=auth, timeout=30, verify=False
     )
     if not r.ok:
         raise HTTPException(status_code=r.status_code,
@@ -148,7 +181,11 @@ def odoo_product_to_woocommerce(odoo_product: OdooProduct, default_status: str =
     # Configurar categorías si existe
     categories = None
     if odoo_product.categ_name:
-        categories = [{"name": odoo_product.categ_name}]
+        name = odoo_product.categ_name.split("/")[-1].strip()
+        slug = name.replace(" ", "-").lower()
+        category = wc_request("GET", f"/products/categories?search={slug}")
+        if category:
+            categories = [{"id": category[0]["id"], "name": name, "slug": slug}]
 
     # Configurar imágenes
     images = None
@@ -190,11 +227,26 @@ def find_woocommerce_product_by_sku(sku: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def find_woocommerce_product_by_id(id: int) -> Optional[Dict[str, Any]]:
+    """Busca un producto en WooCommerce por SKU"""
+    if not int:
+        return None
+
+    try:
+        # Buscar por SKU
+        products = wc_request("GET", f"/products/{id}")
+        return products if products else None
+    except Exception as e:
+        logging.error(f"Error buscando producto por SKU {id}: {e}")
+        return None
+
+
 def create_or_update_woocommerce_product(
     odoo_product: OdooProduct,
     wc_product_data: WooCommerceProductCreate,
     create_if_not_exists: bool = True,
-    update_existing: bool = True
+    update_existing: bool = True,
+    db: Session = None
 ) -> ProductSyncResult:
     """Crea o actualiza un producto en WooCommerce"""
 
@@ -212,7 +264,11 @@ def create_or_update_woocommerce_product(
         if odoo_product.default_code:
             existing_product = find_woocommerce_product_by_sku(
                 odoo_product.default_code)
-
+        else:
+            sync_product = get_product_sync_by_odoo_id(db, odoo_product.id)
+            if sync_product:
+                existing_product = find_woocommerce_product_by_id(
+                    sync_product.woocommerce_id)
         # Convertir el modelo Pydantic a diccionario para la API
         product_data = wc_product_data.dict(exclude_none=True)
 
@@ -222,10 +278,10 @@ def create_or_update_woocommerce_product(
 
             if update_existing:
                 # Actualizar producto existente
-                updated_product = wc_request(
+                updated_product = wc_request_post(
                     "PUT",
                     f"/products/{existing_product['id']}",
-                    params=product_data
+                    data=product_data
                 )
                 result.success = True
                 result.action = "updated"
@@ -239,8 +295,8 @@ def create_or_update_woocommerce_product(
             # Producto no existe
             if create_if_not_exists:
                 # Crear nuevo producto
-                new_product = wc_request(
-                    "POST", "/products", params=product_data)
+                new_product = wc_request_post(
+                    "POST", "/products", data=product_data)
                 result.success = True
                 result.action = "created"
                 result.message = f"Producto creado: {new_product['name']}"
@@ -280,6 +336,20 @@ def find_woocommerce_category_by_name(name: str) -> Optional[Dict[str, Any]]:
         return None
     except Exception as e:
         logging.error(f"Error buscando categoría por nombre {name}: {e}")
+        return None
+
+
+def find_category_by_slug(slug: str) -> Optional[Dict[str, Any]]:
+    """Busca una categoría en WooCommerce por slug"""
+    try:
+        categories = wc_request("GET", f"/products/categories?slug={slug}")
+        # Buscar coincidencia exacta
+        for cat in categories:
+            if cat.get("slug", "").lower() == slug.lower():
+                return cat
+        return None
+    except Exception as e:
+        logging.error(f"Error buscando categoría por slug {slug}: {e}")
         return None
 
 

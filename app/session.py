@@ -8,7 +8,7 @@ redis: Redis = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global redis
-    redis = Redis(host="localhost", port=6379, db=0)
+    redis = Redis(host="woocommerce_redis", port=6379, db=0)
     
     try:
         await redis.ping()

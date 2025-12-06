@@ -41,6 +41,7 @@ class OdooProduct(BaseModel):
     create_date: Optional[str] = None
     write_date: Optional[str] = None
 
+
 class OdooToWooCommerceRequest(BaseModel):
     """Request para sincronizar productos de Odoo a WooCommerce"""
     products: List[OdooProduct]
@@ -48,6 +49,7 @@ class OdooToWooCommerceRequest(BaseModel):
     update_existing: bool = Field(default=True, description="Actualizar si ya existe")
     sync_images: bool = Field(default=False, description="Sincronizar imágenes")
     default_status: str = Field(default="publish", description="Estado por defecto: draft, pending, private, publish")
+
 
 class ProductSyncResult(BaseModel):
     """Resultado de sincronización de un producto"""

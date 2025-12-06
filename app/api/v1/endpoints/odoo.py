@@ -1,5 +1,5 @@
 from app.session import create_session, get_session
-from app.schemas.products import ProductBase
+from app.schemas.products import OdooProductSchema, ProductBase
 from app.schemas.categories import CategoryBase, CategorySyncRequest, CategorySyncResponse
 from app.crud.odoo import OdooClient
 import json
@@ -109,15 +109,20 @@ async def get_odoo_products(
                                           domain=domain,
                                           limit=limit,
                                           fields=[
-                                              "id", "name", "list_price",
-                                              "description", "image_1920",
-                                              "categ_id", "sale_ok",
+                                              "id", 
+                                              "name",
+                                              "list_price",
+                                              "description",
+                                              "image_1920",
+                                              "categ_id",
+                                              "sale_ok",
                                               "uom_id", 
                                               "uom_po_id",
                                               "uom_category_id",
                                               "weight",
                                               "weight_uom_name",
-                                              "volume", "volume_uom_name",
+                                              "volume",
+                                              "volume_uom_name",
                                           ],
                                           offset=offset)
         if products.get("error"):
@@ -157,6 +162,63 @@ async def get_odoo_product(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.get("/products", response_model=List[OdooProductSchema])
+async def get_products(
+    request: Request,
+    name: Optional[str] = Query(
+        None, description="Filtrar por nombre de producto"),
+    limit: int = Query(
+        100, ge=1, le=100, description="Limite de productos a retornar"),
+    offset: int = Query(
+        0, ge=0,
+        description="Offset de productos a retornar"),
+    odoo: OdooClient = Depends(get_session_id),
+):
+    try:
+        uid = await odoo.odoo_authenticate()
+        if not uid:
+            raise HTTPException(
+                status_code=401, detail="No se pudo autenticar")
+        domain = []
+        if name:
+            domain.append(["name", "ilike", name])
+        products = await odoo.search_read(
+            uid,
+            "product.template",
+            domain=domain,
+            limit=limit,
+            fields=[
+                "id",
+                "name",
+                "default_code",
+                "list_price",
+                "standard_price",
+                "description",
+                "description_sale",
+                "categ_id",
+                "active",
+                "sale_ok",
+                "purchase_ok",
+                "type",
+                "qty_available",
+                "virtual_available",
+                "weight",
+                "volume",
+                "image_1920",
+                "create_date",
+                "write_date"
+            ],
+            offset=offset
+        )
+        if products.get("error"):
+            raise HTTPException(
+                status_code=400, detail=products["error"]["message"])
+        return [OdooProductSchema.from_odoo(product) for product in products["result"]]
+    except HTTPException as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/sincronize/product",
              summary="Sincronizar producto desde WooCommerce a Odoo")
