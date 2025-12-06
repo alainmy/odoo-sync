@@ -41,14 +41,14 @@ def wc_request(method: str, path: str, params: Optional[Dict[str, Any]] = None) 
     # Consumir siempre vía Nginx reverse proxy (https://woocommerce.localhost)
     # Si el contenedor no resuelve woocommerce.localhost, usa la IP del host o agrega al /etc/hosts
     auth = (WC_CONSUMER_KEY, WC_CONSUMER_SECRET)
-    headers = {
-        "User-Agent": "Mozilla/5.0",
-        # "Host": "woocommerce.localhost"
-    }
+    # headers = {
+    #     "User-Agent": "Mozilla/5.0",
+    #     "Host": "woocommerce.localhost"
+    # }
     # Permitir desactivar SSL verification para certificados autofirmados
     verify_ssl = False if url.startswith("https://") else True
     r = requests.request(
-        method, url, headers=headers,
+        method, url,
         params=params, auth=auth, timeout=30, verify=verify_ssl
     )
     if not r.ok:
@@ -64,7 +64,7 @@ def wc_request_post(method: str, path: str, data: Optional[Dict[str, Any]] = Non
     auth = (WC_CONSUMER_KEY, WC_CONSUMER_SECRET)
     headers = {
         "User-Agent": "Mozilla/5.0",
-        # "Host": "woocommerce.localhost"
+        "Host": "woocommerce.localhost"
     }
     # Permitir desactivar SSL verification para certificados autofirmados
     r = requests.request(

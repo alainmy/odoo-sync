@@ -2,20 +2,23 @@ from contextlib import asynccontextmanager
 import json
 from redis.asyncio import Redis
 from fastapi import Depends, FastAPI, HTTPException, Header, Cookie, Request, Response
+from app.core.config import settings
 # Configuración de la conexión
 
 redis: Redis = None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global redis
-    redis = Redis(host="woocommerce_redis", port=6379, db=0)
-    
+    redis = Redis(host=settings.wc_redis_host, port=settings.wc_redis_port)
+
     try:
         await redis.ping()
         print("✅ Redis conectado correctamente.")
     except Exception as e:
         print(f"❌ Error al conectar con Redis: {e}")
-    
+
     # ⬇️ Ejecuta la app
     yield
 
@@ -23,6 +26,7 @@ async def lifespan(app: FastAPI):
     await redis.close()
     await redis.connection_pool.disconnect()
     print("🔌 Redis desconectado correctamente.")
+
 
 async def create_session(uid, data, is_public: bool = False,
                          ACCESS_TOKEN_EXPIRE_MINUTES=60):
