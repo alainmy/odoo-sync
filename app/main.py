@@ -6,6 +6,7 @@ from app.api.v1.endpoints.admin_endpoint import router as admin_router
 from app.api.v1.endpoints.odoo import router as odoo_router
 from app.api.v1.endpoints.auth import router as auth_router
 from app.api.v1.endpoints.woocommerce import router as woocommerce_router
+from app.api.v1.endpoints.proccess_invoice import router as invoice_router
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.session import get_session, create_session, lifespan
@@ -82,7 +83,7 @@ app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(odoo_router, prefix="/odoo", tags=["odoo"])
 app.include_router(woocommerce_router, prefix="/woocommerce", tags=["woocommerce"])
 # app.include_router(books_router, prefix="/bookscraping", tags=["bookscraping"])
-
+app.include_router(invoice_router, prefix="/invoice", tags=["invoice"])
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=5010, reload=True)

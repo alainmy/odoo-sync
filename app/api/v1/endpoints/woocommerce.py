@@ -98,7 +98,7 @@ def sync_status(task_id: str):
 
 @router.post("/products/sync-from-odoo",
              response_model=OdooToWooCommerceSyncResponse)
-def sync_products_from_odoo(request: OdooToWooCommerceRequest,
+async def sync_products_from_odoo(request: OdooToWooCommerceRequest,
                             db: Session = Depends(get_db)):
     """
     Sincroniza productos desde Odoo hacia WooCommerce
@@ -119,13 +119,13 @@ def sync_products_from_odoo(request: OdooToWooCommerceRequest,
 
     for odoo_product in request.products:
         # Convertir producto Odoo a formato WooCommerce
-        wc_product_data = odoo_product_to_woocommerce(
+        wc_product_data = await odoo_product_to_woocommerce(
             odoo_product,
             request.default_status
         )
 
         # Sincronizar producto
-        sync_result = create_or_update_woocommerce_product(
+        sync_result = await create_or_update_woocommerce_product(
             odoo_product=odoo_product,
             wc_product_data=wc_product_data,
             create_if_not_exists=request.create_if_not_exists,
@@ -170,7 +170,7 @@ def sync_products_from_odoo(request: OdooToWooCommerceRequest,
 
 @router.post("/categories/sync-from-odoo",
              response_model=OdooCategoriesToWooCommerceSyncResponse)
-def sync_categories_from_odoo(
+async def sync_categories_from_odoo(
     request: OdooCategoriesToWooCommerceRequest,
     db: Session = Depends(get_db)
 ):
@@ -217,7 +217,7 @@ def sync_categories_from_odoo(
         )
 
         # Sincronizar categoría
-        sync_result = create_or_update_woocommerce_category(
+        sync_result = await create_or_update_woocommerce_category(
             odoo_category=odoo_category,
             wc_category_data=wc_category_data,
             create_if_not_exists=request.create_if_not_exists,

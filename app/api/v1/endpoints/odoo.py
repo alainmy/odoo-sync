@@ -1,3 +1,5 @@
+from datetime import datetime, date
+from http import client
 from app.session import create_session, get_session
 from app.schemas.products import OdooProductSchema, ProductBase
 from app.schemas.categories import CategoryBase, CategorySyncRequest, CategorySyncResponse
@@ -10,12 +12,15 @@ import dotenv
 import requests
 import logging
 from app.core.config import settings
+from app.schemas.invoice import OdooInvoiceSchema
 dotenv.load_dotenv()
 
 
 _logger = logging.getLogger(__name__)
 
 # Dependency para documentar api_session como header global
+
+
 async def api_session_header(api_session: str = Header(..., description="Token de sesión Odoo (header)")):
     return api_session
 
@@ -38,7 +43,8 @@ default_context = {
 
 
 async def get_session_id(request: Request):
-    api_session = request.headers.get("api-session") or request.headers.get("api_session")
+    api_session = request.headers.get(
+        "api-session") or request.headers.get("api_session")
     if api_session:
         session = await get_session(request)
         # if not session:
@@ -109,14 +115,14 @@ async def get_odoo_products(
                                           domain=domain,
                                           limit=limit,
                                           fields=[
-                                              "id", 
+                                              "id",
                                               "name",
                                               "list_price",
                                               "description",
                                               "image_1920",
                                               "categ_id",
                                               "sale_ok",
-                                              "uom_id", 
+                                              "uom_id",
                                               "uom_po_id",
                                               "uom_category_id",
                                               "weight",
@@ -220,6 +226,7 @@ async def get_products(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.post("/sincronize/product",
              summary="Sincronizar producto desde WooCommerce a Odoo")
 async def sync_product_to_odoo(request: Request):
@@ -313,7 +320,7 @@ async def sync_product_to_odoo(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/categories/odoo", 
+@router.get("/categories/odoo",
             summary="Consultar categorías en Odoo",
             response_model=List[CategoryBase])
 async def get_odoo_categories(
@@ -328,14 +335,14 @@ async def get_odoo_categories(
 ):
     """
     Obtiene las categorías de productos desde Odoo
-    
+
     Args:
         request: Request de FastAPI
         name: Nombre de categoría para filtrar (opcional)
         limit: Límite de resultados (máx 500)
         offset: Offset para paginación
         odoo: Cliente Odoo autenticado
-        
+
     Returns:
         Lista de categorías de Odoo
     """
@@ -344,22 +351,22 @@ async def get_odoo_categories(
         uid = await odoo.odoo_authenticate()
         if not uid:
             raise HTTPException(
-                status_code=401, 
+                status_code=401,
                 detail="No se pudo autenticar con Odoo")
-        
+
         # Construir dominio de búsqueda
         domain = []
         if name:
             domain.append(["name", "ilike", name])
-        
+
         # Consultar categorías desde Odoo
         categories = await odoo.search_read(
             uid,
             "product.category",
             domain=domain,
             fields=[
-                "id", 
-                "name", 
+                "id",
+                "name",
                 "parent_id",
                 "display_name",
                 "complete_name"
@@ -367,23 +374,23 @@ async def get_odoo_categories(
             limit=limit,
             offset=offset
         )
-        
+
         if categories.get("error"):
             error_msg = categories["error"].get("message", "Error desconocido")
             _logger.error(f"Error consultando categorías Odoo: {error_msg}")
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail=error_msg)
-        
+
         # Convertir a CategoryBase
         category_list = [
-            CategoryBase.from_odoo(category) 
+            CategoryBase.from_odoo(category)
             for category in categories["result"]
         ]
-        
+
         _logger.info(f"Categorías obtenidas de Odoo: {len(category_list)}")
         return category_list
-        
+
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -402,47 +409,50 @@ async def sync_categories_from_odoo(
 ):
     """
     Sincroniza categorías desde Odoo hacia WooCommerce
-    
+
     Este endpoint:
     1. Lee las categorías desde Odoo usando el cliente autenticado
     2. Las transforma al formato de WooCommerce
     3. Las crea o actualiza en WooCommerce
-    
+
     Args:
         request: Request de FastAPI
         sync_request: Parámetros de sincronización (IDs, límite, offset)
         odoo: Cliente Odoo autenticado mediante get_session_id
-        
+
     Returns:
         Resultado de la sincronización con estadísticas
     """
     try:
-        _logger.info("=== INICIANDO SINCRONIZACIÓN DE CATEGORÍAS ODOO -> WOOCOMMERCE ===")
-        
+        _logger.info(
+            "=== INICIANDO SINCRONIZACIÓN DE CATEGORÍAS ODOO -> WOOCOMMERCE ===")
+
         # Autenticar con Odoo
         uid = await odoo.odoo_authenticate()
         if not uid:
             raise HTTPException(
-                status_code=401, 
+                status_code=401,
                 detail="No se pudo autenticar con Odoo")
-        
+
         _logger.info(f"Usuario Odoo autenticado: {uid}")
-        
+
         # Construir dominio de búsqueda
         domain = []
         if sync_request.category_ids:
             domain.append(["id", "in", sync_request.category_ids])
-            _logger.info(f"Filtrando categorías específicas: {sync_request.category_ids}")
-        
+            _logger.info(
+                f"Filtrando categorías específicas: {sync_request.category_ids}")
+
         # Consultar categorías desde Odoo
-        _logger.info(f"Consultando categorías Odoo (limit={sync_request.limit}, offset={sync_request.offset})")
+        _logger.info(
+            f"Consultando categorías Odoo (limit={sync_request.limit}, offset={sync_request.offset})")
         categories_response = await odoo.search_read(
             uid,
             "product.category",
             domain=domain,
             fields=[
-                "id", 
-                "name", 
+                "id",
+                "name",
                 "parent_id",
                 "display_name",
                 "complete_name"
@@ -450,31 +460,32 @@ async def sync_categories_from_odoo(
             limit=sync_request.limit,
             offset=sync_request.offset
         )
-        
+
         if categories_response.get("error"):
-            error_msg = categories_response["error"].get("message", "Error desconocido")
+            error_msg = categories_response["error"].get(
+                "message", "Error desconocido")
             _logger.error(f"Error consultando categorías Odoo: {error_msg}")
             raise HTTPException(status_code=400, detail=error_msg)
-        
+
         odoo_categories = categories_response.get("result", [])
         _logger.info(f"Categorías obtenidas de Odoo: {len(odoo_categories)}")
-        
+
         # Convertir a CategoryBase
         category_list = [
-            CategoryBase.from_odoo(category) 
+            CategoryBase.from_odoo(category)
             for category in odoo_categories
         ]
-        
+
         # TODO: Implementar la sincronización con WooCommerce
         # Aquí puedes agregar la lógica para crear/actualizar en WooCommerce
         # Ejemplo:
         woocommerce_client = WooCommerceClient(...)
         for category in category_list:
             result = await woocommerce_client.create_or_update_category(category)
-        
+
         # Por ahora, retornamos las categorías leídas
         categories_processed = len(category_list)
-        
+
         response = CategorySyncResponse(
             status="success",
             message=f"Sincronización completada. {categories_processed} categorías procesadas.",
@@ -485,15 +496,117 @@ async def sync_categories_from_odoo(
             odoo_categories=category_list,
             errors=None
         )
-        
-        _logger.info(f"Sincronización completada: {categories_processed} categorías")
+
+        _logger.info(
+            f"Sincronización completada: {categories_processed} categorías")
         _logger.info("=== FIN SINCRONIZACIÓN ===")
-        
+
         return response
-        
+
     except HTTPException as e:
         raise e
     except Exception as e:
         _logger.error(f"Error inesperado en sincronización: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.post("/save-invoice/", summary="Guardar factura en Odoo", tags=["invoice"])
+async def save_invoice(
+        data: OdooInvoiceSchema = Body(...),
+        odoo: OdooClient = Depends(get_session_id),
+):
+
+    try:
+        # Autenticar con Odoo
+        uid = await odoo.odoo_authenticate()
+        if not uid:
+            raise HTTPException(
+                status_code=401,
+                detail="No se pudo autenticar con Odoo")
+
+        # Crear factura en Odoo
+        _logger.info(f"Creando factura en Odoo (uid={uid})")
+        vals = data.model_dump()
+        reference = vals.pop("invoice_reference")
+        vals.update({"name": reference})
+
+        # Search partner by email
+        partner = vals.pop("client_email")
+        partner.pop("addres")
+
+        vals["partner_id"] = partner
+        partner = await odoo.search_read(
+            uid,
+            "res.partner",
+            domain=[["vat", "=", partner.get("vat")]],
+            fields=["id", "name", "vat"],
+            limit=1,
+            offset=0
+        )
+        if not partner.get("result"):
+            _logger.warning(
+                f"No se encontró cliente con VAT {partner.get('vat')}")
+            raise HTTPException(
+                status_code=400,
+                detail="No se encontró cliente con VAT")
+        vals["partner_id"] = partner["result"][0]["id"]
+        lines = vals.pop("line_ids")
+
+        # Get companys
+        company = await odoo.search_read(
+            uid,
+            "res.company",
+            domain=[["vat", "=", partner.get("vat")]],
+            fields=["id", "name", "account_journal_suspense_account_id"],
+            limit=1,
+            offset=0
+        )
+        if not company.get("result"):
+            _logger.warning(
+                f"No se encontró empresa con VAT {partner.get('vat')}")
+            raise HTTPException(
+                status_code=400,
+                detail="No se encontró empresa con VAT")
+
+        for line in lines:
+            product = await odoo.search_read(
+                uid,
+                "product.product",
+                domain=[["default_code", "=", line.get("product_code")]],
+                fields=["id", "name", "list_price", "uom_id",
+                        "uom_po_id", "uom_category_id"],
+                limit=1,
+                offset=0
+            )
+            if not product.get("result"):
+                _logger.warning(
+                    f"No se encontró producto con código {line.get('product_code')}")
+                continue
+            line["product_id"] = product["result"][0]["id"]
+            line["price_unit"] = product["result"][0]["list_price"]
+            line["quantity"] = line.pop("quantity")
+            line["account_id"] = company["result"][0]["account_journal_suspense_account_id"][0]
+            line.pop("taxes")
+
+        invoice_date = datetime.strptime(
+            vals["invoice_date"], "%d/%m/%Y")
+        invoice_date_due = datetime.strptime(
+            vals["invoice_date_due"], "%d/%m/%Y")
+        vals['invoice_line_ids'] = [(0, 0, line) for line in lines]
+        vals["invoice_date"] = invoice_date.strftime("%Y-%m-%d")
+        vals["invoice_date_due"] = invoice_date_due.strftime("%Y-%m-%d")
+        vals["move_type"] = "out_invoice"
+
+        invoice = odoo.create('account.move', vals)
+
+        if invoice.get("error"):
+            error_msg = invoice["error"].get("message", "Error desconocido")
+            _logger.error(f"Error creando factura en Odoo: {error_msg}")
+            raise HTTPException(status_code=400, detail=error_msg)
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        _logger.error(f"Error inesperado creando factura: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"odoo_invoice_id": invoice["result"]}

@@ -118,6 +118,6 @@ class OdooClient:
         response = requests.post(f"{self.url}/jsonrpc", json=payload)
         result = response.json()
         if "result" in result:
-            return result["result"]  # Devuelve el ID del nuevo registro
+            return result  # Devuelve el ID del nuevo registro
         else:
             raise Exception(f"Odoo create error: {result}")

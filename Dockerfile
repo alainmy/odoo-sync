@@ -5,7 +5,7 @@ WORKDIR /app
 COPY ./app /app/app
 COPY ./requirements.txt /app/requirements.txt
 
-RUN pip install --no-cache-dir --upgrade -r /app/requirements.txt
+RUN pip install --upgrade-strategy only-if-needed -r /app/requirements.txt
 
 # Expose port
 EXPOSE 5010
