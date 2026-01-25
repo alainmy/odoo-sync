@@ -1,7 +1,7 @@
 from app.models.admin import ProductSync
 from app.schemas.admin import ProductSyncCreate
 from sqlalchemy.orm import Session
-from app.models.admin import Admin, CategroySync
+from app.models.admin import Admin, CategorySync
 from app.schemas.admin import AdminCreate, CategorySyncCreate, CategorySync
 
 
@@ -55,7 +55,7 @@ def delete_admin(db: Session, item_id: int):
 
 
 def save_categroy_sync(db: Session, item: CategorySyncCreate):
-    db_item = CategroySync(odoo_id=item.odoo_id,
+    db_item = CategorySync(odoo_id=item.odoo_id,
                            woocommerce_id=item.woocommerce_id)
     db.add(db_item)
     db.commit()
@@ -63,7 +63,7 @@ def save_categroy_sync(db: Session, item: CategorySyncCreate):
     return db_item
 
 
-def update_categroy_sync(db: Session, db_item: CategroySync, item: CategorySyncCreate):
+def update_categroy_sync(db: Session, db_item: CategorySync, item: CategorySyncCreate):
     db_item.odoo_id = item.odoo_id
     db_item.woocommerce_id = item.woocommerce_id
     db.commit()
@@ -72,11 +72,11 @@ def update_categroy_sync(db: Session, db_item: CategroySync, item: CategorySyncC
 
 
 def delete_categroy_sync(db: Session, item_id: int):
-    db_item = db.query(CategroySync).filter(CategorySync.id == item_id).first()
+    db_item = db.query(CategorySync).filter(CategorySync.id == item_id).first()
     db.delete(db_item)
     db.commit()
     return db_item
 
 
 def get_categroy_by_odoo_id(db: Session, item_id: int):
-    return db.query(CategroySync).filter(CategroySync.odoo_id == item_id).first()
+    return db.query(CategorySync).filter(CategorySync.odoo_id == item_id).first()

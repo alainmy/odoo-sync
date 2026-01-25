@@ -12,7 +12,7 @@ router = APIRouter()
 
 
 @router.post("/login", response_model=schemas.user_schema.Token)
-def login_for_access_token(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
+def login_for_access_token(db: Session = Depends(get_db), form_data: OAuth2PasswordRequestForm = Depends()):
     user = crud.get_user_by_username(db, username=form_data.username)
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(

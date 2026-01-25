@@ -95,6 +95,42 @@ class OdooClient:
         result = response.json()
         return result
 
+    def search_read_sync(self,
+                         model,
+                         domain=None,
+                         fields=None,
+                         limit=100,
+                         offset=0):
+        """Versión síncrona de search_read para usar en contextos no async."""
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "call",
+            "params": {
+                "service": "object",
+                "method": "execute_kw",
+                "args": [
+                    self.db,
+                    self.uid,
+                    self.password,
+                    model,
+                    "search_read",
+                    [domain or []],
+                    {
+                        "fields": fields or ["id", "name", "list_price",
+                                             "description", "image_1920"],
+                        "offset": limit * offset,
+                        "limit": limit,
+                        "order": "id asc",
+                        "context": self.context
+                    }
+                ],
+            },
+            "id": 2
+        }
+        response = requests.post(f"{self.url}/jsonrpc", json=payload)
+        result = response.json()
+        return result.get("result", [])
+
     def create(self, model, vals):
         """Crea un registro en Odoo para el modelo y valores dados."""
         payload = {

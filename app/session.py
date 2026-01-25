@@ -5,7 +5,7 @@ from fastapi import Depends, FastAPI, HTTPException, Header, Cookie, Request, Re
 from app.core.config import settings
 # Configuración de la conexión
 
-redis: Redis = None
+redis: Redis = Redis(host=settings.wc_redis_host, port=settings.wc_redis_port)
 
 
 @asynccontextmanager
@@ -39,13 +39,11 @@ async def create_session(uid, data, is_public: bool = False,
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def get_session(request: Request):
+async def get_session(uid: str, request: Request = None):
 
-    headers = dict(request.headers)
-    session_id = headers.get("api-session")
-    if session_id:
+    if uid:
         try:
-            session = await redis.get(session_id)
+            session = await redis.get(uid)
             if session:
                 return session
             else:
@@ -66,3 +64,31 @@ async def invalidate_session(session_id: str, response: Response):
             raise HTTPException(status_code=500, detail=str(e))
     response.delete_cookie("access_token")  # Elimina la cookie del cliente
     print(f"Session {session_id} invalidated.")
+
+
+async def save_chat_id(chat_id: str, data: dict):
+    
+    try:
+        await redis.set(chat_id, json.dumps(data))
+        await redis.expire(chat_id, 100)
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def get_chat_id(chat_id: str):
+    
+    session_id = chat_id
+    if session_id:
+        try:
+            session = await redis.get(session_id)
+            if session:
+                return session
+            else:
+                return None
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    else:
+        raise HTTPException(
+            status_code=400, detail="Cannot determine session: 'api_session' header is missing"
+        )

@@ -4,14 +4,21 @@ from sqlalchemy import engine_from_config, pool
 from logging.config import fileConfig
 import os
 import sys
+from dotenv import load_dotenv
 
+load_dotenv()
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from app.db.base import Base
+
+# Import all models to ensure they're registered with Base.metadata
+from app.models.admin import Admin, WooCommerceInstance, ProductSync, CategorySync, TagSync, WebhookLog, CeleryTaskLog
+from app.models.attribute_models import AttributeSync, AttributeValueSync
+from app.models.user_model import User
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
-
+config.set_main_option('sqlalchemy.url', os.getenv('DATABASE_URL', 'sqlite:///./app.db'))
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
 fileConfig(config.config_file_name)

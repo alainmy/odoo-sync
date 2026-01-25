@@ -1,12 +1,17 @@
 # --- Servicio para enviar PDF a webhook n8n ---
+from calendar import c
+import copy
+from hmac import new
 import json
-from fastapi import APIRouter, Body, UploadFile, File, Header, HTTPException, status, Depends
+import os
+from fastapi import APIRouter, Body, Query, Request, UploadFile, File, Header, HTTPException, status, Depends
 import httpx
 from app.core.config import settings
 import logging
 
 from app.services.odoo_service import get_moves
 from app.schemas.invoice import OdooInvoiceSchema
+from app.session import get_chat_id, save_chat_id
 _logger = logging.getLogger(__name__)
 router = APIRouter()
 
@@ -14,6 +19,8 @@ router = APIRouter()
 # Cambia esta URL por la de tu webhook real
 # http://localhost:5678/webhook-test/1df4c8cf-2fcf-452f-a851-27d74d4f3518
 N8N_WEBHOOK_URL = settings.n8n_web_hook_url
+CHAT_WEBHOOK_URL = os.getenv(
+    "CHAT_WEBHOOK_URL", "http://localhost:5678/webhook-test/f365a6a5-c723-4a6a-a233-41e98dc0903f")
 # N8N_WEBHOOK_URL = "http://woocommerce_n8n:5678/webhook-test/1df4c8cf-2fcf-452f-a851-27d74d4f3518"
 API_KEY = "supersecretkey"  # Cambia esto por tu clave real o usa variable de entorno
 
@@ -26,6 +33,7 @@ def api_key_auth(x_api_key: str = Header(...)):
 
 @router.post("/send-invoice-pdf/", summary="Enviar PDF de factura a n8n", tags=["invoice"])
 async def send_invoice_pdf(
+        request: Request,
         file: UploadFile = File(...),
         auth: None = Depends(api_key_auth)
 ):
@@ -44,6 +52,9 @@ async def send_invoice_pdf(
                 # No establecer Content-Type manualmente, httpx lo gestiona con 'files'
                 "User-Agent": "PostmanRuntime/7.36.3"
             }
+            custome_headers = {key: value for key, value in request.headers.items() if
+                               key in ["chat-id", "private-chat-id", "username"]}
+            headers.update(custome_headers)
             response = await client.post(
                 N8N_WEBHOOK_URL + "/1df4c8cf-2fcf-452f-a851-27d74d4f3518",
                 headers=headers,
@@ -59,6 +70,8 @@ async def send_invoice_pdf(
     return {"n8n_response": response.json() if response.headers.get("content-type", "").startswith("application/json") else response.text}
 
 # INteraccion con Chat en n8n
+
+
 @router.post("/chatter/", summary="Enviar mensaje a chat en n8n", tags=["chatter"])
 async def send_chat_message(
         message: str = None,
@@ -95,6 +108,77 @@ async def send_chat_message(
             _logger.info(f"N8N response: {response.text}")
             response.raise_for_status()
     except httpx.HTTPError as e:
+        raise HTTPException(
+            status_code=502, detail=f"Error enviando a n8n: {str(e)}")
+
+    return {}
+
+
+@router.post("/telegram-chatter/", summary="Enviar mensaje a chat en n8n", tags=["chatter"])
+async def send_telegram_chat_message(
+        request: Request,
+        message: str = Query()
+):
+    # Validar tipo de archivo
+    if not message:
+        raise HTTPException(
+            status_code=400, detail="Mensaje requerido")
+
+    # Enviar a n8n webhook como multipart/form-data, simulando Postman
+    try:
+        async with httpx.AsyncClient() as client:
+            headers = {
+                # No establecer Content-Type manualmente, httpx lo gestiona con 'files'
+                "User-Agent": "PostmanRuntime/7.36.3"
+            }
+            chat_id = request.headers.get("chat-id", None)
+            private_chat_id = request.headers.get("private-chat-id", None)
+            username = request.headers.get("username", None)
+            chat_context = await get_chat_id(private_chat_id)
+            context_copy = {}  # para enviar los ultimos 5 mensajes
+            if not chat_context:
+                chat_context = {
+                    "private_chat_id": private_chat_id,
+                    "username": username,
+                    "chat_id": chat_id,
+                    "history": [{
+                        "role": "user",
+                        "content": message
+                    }]
+                }
+                context_copy = chat_context
+            else:
+                chat_context = json.loads(chat_context)
+                context_copy = copy.deepcopy(chat_context)
+                context_copy.update(
+                    {
+                        "history": context_copy["history"][:5]
+                    })
+            response = await client.post(
+                f"{N8N_WEBHOOK_URL}/f365a6a5-c723-4a6a-a233-41e98dc0903f",
+                headers=headers,
+                data={
+                    "message": message,
+                    "context": context_copy},
+                timeout=60
+            )
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=502, detail=f"Error enviando a n8n: {str(response.text)}")
+            else:
+                _logger.info(f"N8N response: {response.text}")
+                response_json = response.json()
+                content = response_json["message"]["content"]
+                chat_context['history'].append({
+                    "role": "assistant",
+                    "content": content
+                })
+                await save_chat_id(chat_id=private_chat_id, data=chat_context)
+
+                _logger.info(f"N8N response: {response.text}")
+                response.raise_for_status()
+                return {"message": content}
+    except Exception as e:
         raise HTTPException(
             status_code=502, detail=f"Error enviando a n8n: {str(e)}")
 

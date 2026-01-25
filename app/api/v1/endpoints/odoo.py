@@ -1,5 +1,8 @@
+from ast import Param
 from datetime import datetime, date
+from email import message
 from http import client
+import time
 from app.session import create_session, get_session
 from app.schemas.products import OdooProductSchema, ProductBase
 from app.schemas.categories import CategoryBase, CategorySyncRequest, CategorySyncResponse
@@ -13,6 +16,12 @@ import requests
 import logging
 from app.core.config import settings
 from app.schemas.invoice import OdooInvoiceSchema
+from app.telegram_bot import application as app
+from app.crud import instance as crud_instance
+from app.auth.oauth2 import get_current_user
+from app.models.admin import Admin
+from app.db.session import get_db
+from sqlalchemy.orm import Session
 dotenv.load_dotenv()
 
 
@@ -44,49 +53,85 @@ default_context = {
 
 async def get_session_id(request: Request):
     api_session = request.headers.get(
-        "api-session") or request.headers.get("api_session")
-    if api_session:
-        session = await get_session(request)
-        # if not session:
-        #     raise HTTPException(
-        #             status_code=401, detail="Session not found")
-        if session:
-            # if not session.is_valid() and session.expiry_date:
-            #     raise HTTPException(
-            #             status_code=401, detail="Session expired")
-            session_data = json.loads(session)
-            session_data.update({
-                "password": settings.odoo_password,
-                "username": settings.odoo_username
-            })
-            session_data["context"].update({
-                "lang": request.headers.get("lang", "en_US"),
-                "tz": request.headers.get("tz", "America/Havana"),
-                "website_id": request.headers.get("website_id", 1),
-                "allowed_company_ids": [1],
-                "uid": session_data.get("uid", 2),
+        "api-session") or request.headers.get("api_session") or "default-session"
+    
+    session = await get_session(api_session)
+    if session:
+        session_data = json.loads(session)
+        session_data.update({
+            "password": settings.odoo_password,
+            "username": settings.odoo_username
+        })
+        session_data["context"].update({
+            "lang": request.headers.get("lang", "en_US"),
+            "tz": request.headers.get("tz", "America/Havana"),
+            "website_id": request.headers.get("website_id", 1),
+            "allowed_company_ids": [1],
+            "uid": session_data.get("uid", 2),
 
-            })
-            await create_session(api_session, session_data)
-            odoo = OdooClient(url=settings.odoo_url,
-                              db=settings.odoo_db,
-                              username=session_data["username"],
-                              password=session_data["password"] or settings.odoo_password,
-                              context=session_data["context"])
-            return odoo
-        else:
-            session_data = {
-                "password": settings.odoo_password,
-                "username": settings.odoo_username,
-                "context": default_context
-            }
-            await create_session(api_session, session_data)
-            odoo = OdooClient(url=settings.odoo_url,
-                              db=settings.odoo_db,
-                              username=session_data["username"],
-                              password=session_data["password"],
-                              context=session_data["context"])
-            return odoo
+        })
+        await create_session(api_session, session_data)
+        odoo = OdooClient(url=settings.odoo_url,
+                          db=settings.odoo_db,
+                          username=session_data["username"],
+                          password=session_data["password"] or settings.odoo_password,
+                          context=session_data["context"])
+        return odoo
+    else:
+        session_data = {
+            "password": settings.odoo_password,
+            "username": settings.odoo_username,
+            "context": default_context
+        }
+        await create_session(api_session, session_data)
+        odoo = OdooClient(url=settings.odoo_url,
+                          db=settings.odoo_db,
+                          username=session_data["username"],
+                          password=session_data["password"],
+                          context=session_data["context"])
+        return odoo
+
+
+async def get_odoo_from_active_instance(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: Admin = Depends(get_current_user)
+):
+    """Obtener cliente de Odoo desde la instancia activa del usuario"""
+    # Obtener instancia activa
+    instance = crud_instance.get_active_instance(db, user_id=current_user.id)
+    if not instance:
+        raise HTTPException(
+            status_code=404,
+            detail="No hay ninguna instancia activa configurada. Por favor activa una instancia primero."
+        )
+    
+    # Obtener sesión si existe
+    api_session = request.headers.get("api-session") or request.headers.get("api_session") or "default-session"
+    session = await get_session(api_session)
+    
+    context = default_context.copy()
+    context.update({
+        "lang": request.headers.get("lang", "en_US"),
+        "tz": request.headers.get("tz", "America/Havana"),
+        "website_id": request.headers.get("website_id", 1),
+    })
+    
+    if session:
+        session_data = json.loads(session)
+        if "context" in session_data:
+            context.update(session_data["context"])
+    
+    # Crear cliente con configuraciones de la instancia activa
+    odoo = OdooClient(
+        url=instance.odoo_url,
+        db=instance.odoo_db,
+        username=instance.odoo_username,
+        password=instance.odoo_password,
+        context=context
+    )
+    
+    return odoo
 
 
 @router.get("/odoo/products", summary="Consultar productos en Odoo",
@@ -101,6 +146,8 @@ async def get_odoo_products(
         0, ge=0,
         description="Offset de productos a retornar"),
     odoo: str = Depends(get_session_id),
+    db: Session = Depends(get_db),
+    current_user: Admin = Depends(get_current_user)
 ):
     try:
         uid = await odoo.odoo_authenticate()
@@ -147,12 +194,14 @@ async def get_odoo_product(
     request: Request,
     product_id: int,
     odoo: str = Depends(get_session_id),
+    db: Session = Depends(get_db),
+    current_user: Admin = Depends(get_current_user)
 ):
     try:
         uid = await odoo.odoo_authenticate()
         if not uid:
             raise HTTPException(
-                status_code=401, detail="No se pudo autenticar")
+                status_code=401, detail="Invalid Credentials")
         domain = [
             ["id", "=", product_id]
         ]
@@ -180,12 +229,14 @@ async def get_products(
         0, ge=0,
         description="Offset de productos a retornar"),
     odoo: OdooClient = Depends(get_session_id),
+    db: Session = Depends(get_db),
+    current_user: Admin = Depends(get_current_user)
 ):
     try:
         uid = await odoo.odoo_authenticate()
         if not uid:
             raise HTTPException(
-                status_code=401, detail="No se pudo autenticar")
+                status_code=401, detail="Invalid Credentials")
         domain = []
         if name:
             domain.append(["name", "ilike", name])
@@ -203,6 +254,7 @@ async def get_products(
                 "description",
                 "description_sale",
                 "categ_id",
+                "product_tag_ids",
                 "active",
                 "sale_ok",
                 "purchase_ok",
@@ -231,86 +283,77 @@ async def get_products(
              summary="Sincronizar producto desde WooCommerce a Odoo")
 async def sync_product_to_odoo(request: Request):
     """
-    Recibe un webhook de WooCommerce cuando se actualiza un producto
-    y lo sincroniza con Odoo
+    Webhook endpoint: Receives WooCommerce product updates and queues them for sync to Odoo.
+    Now uses Celery for async processing with idempotency.
     """
     try:
-        # Obtener headers del webhook
+        from app.tasks.webhook_tasks import process_webhook
+
+        # Get webhook headers
         webhook_headers = {
             "user_agent": request.headers.get("user-agent", ""),
             "content_type": request.headers.get("content-type", ""),
-            "x_wc_webhook_source": request.headers.get(
-                "x-wc-webhook-source", ""),
-            "x_wc_webhook_topic": request.headers.get(
-                "x-wc-webhook-topic", ""),
-            "x_wc_webhook_resource": request.headers.get(
-                "x-wc-webhook-resource", ""),
-            "x_wc_webhook_event": request.headers.get(
-                "x-wc-webhook-event", ""),
-            "x_wc_webhook_signature": request.headers.get(
-                "x-wc-webhook-signature", ""),
+            "x_wc_webhook_source": request.headers.get("x-wc-webhook-source", ""),
+            "x_wc_webhook_topic": request.headers.get("x-wc-webhook-topic", ""),
+            "x_wc_webhook_resource": request.headers.get("x-wc-webhook-resource", ""),
+            "x_wc_webhook_event": request.headers.get("x-wc-webhook-event", ""),
+            "x_wc_webhook_signature": request.headers.get("x-wc-webhook-signature", ""),
             "x_wc_webhook_id": request.headers.get("x-wc-webhook-id", ""),
-            "x_wc_webhook_delivery_id": request.headers.get(
-                "x-wc-webhook-delivery-id", "")
+            "x_wc_webhook_delivery_id": request.headers.get("x-wc-webhook-delivery-id", "")
         }
 
-        # Obtener el payload JSON del webhook
+        # Get webhook payload
         webhook_payload = await request.json()
 
-        # Log detallado para debugging
-        _logger.info("=== WEBHOOK RECIBIDO ===")
-        _logger.info("Headers: %s", webhook_headers)
-        payload_str = json.dumps(webhook_payload, indent=2)
-        _logger.info("Payload completo: %s", payload_str)
+        # Log for debugging
+        _logger.info("=== WEBHOOK RECEIVED ===")
+        _logger.info("Topic: %s, Event: %s",
+                    webhook_headers["x_wc_webhook_topic"],
+                    webhook_headers["x_wc_webhook_event"])
+        _logger.info("Product ID: %s", webhook_payload.get("id"))
 
-        # Extraer información del producto de WooCommerce
-        if webhook_payload:
-            product_data = {
-                "wc_id": webhook_payload.get("id"),
-                "name": webhook_payload.get("name"),
-                "slug": webhook_payload.get("slug"),
-                "sku": webhook_payload.get("sku"),
-                "price": webhook_payload.get("price"),
-                "regular_price": webhook_payload.get("regular_price"),
-                "sale_price": webhook_payload.get("sale_price"),
-                "description": webhook_payload.get("description"),
-                "short_description": webhook_payload.get("short_description"),
-                "categories": webhook_payload.get("categories", []),
-                "images": webhook_payload.get("images", []),
-                "status": webhook_payload.get("status"),
-                "stock_quantity": webhook_payload.get("stock_quantity"),
-                "manage_stock": webhook_payload.get("manage_stock"),
-                "stock_status": webhook_payload.get("stock_status"),
-                "weight": webhook_payload.get("weight"),
-                "dimensions": webhook_payload.get("dimensions", {}),
-                "attributes": webhook_payload.get("attributes", []),
-                "date_created": webhook_payload.get("date_created"),
-                "date_modified": webhook_payload.get("date_modified")
-            }
-
-            product_str = json.dumps(product_data, indent=2)
-            _logger.info("Datos del producto extraídos: %s", product_str)
-
-            # TODO: Implementar la lógica de sincronización con Odoo
-            # Ejemplo:
-            # odoo_client = OdooClient(...)
-            # result = await odoo_client.create_or_update_product(product_data)
-
-            success_msg = f"Producto {product_data['name']} procesado"
-            return {
-                "status": "success",
-                "message": success_msg,
-                "wc_product_id": product_data["wc_id"],
-                "webhook_event": webhook_headers["x_wc_webhook_event"],
-                "webhook_topic": webhook_headers["x_wc_webhook_topic"],
-                "processed_data": product_data
-            }
+        # Validate webhook signature (ENABLED for production security)
+        signature = webhook_headers.get("x_wc_webhook_signature", "")
+        if signature:
+            from app.tasks.webhook_tasks import validate_webhook_signature
+            body = await request.body()
+            if not validate_webhook_signature(body, signature, settings.wc_webhook_secret):
+                _logger.warning(f"Invalid webhook signature for event {webhook_headers.get('x_wc_webhook_delivery_id')}")
+                raise HTTPException(status_code=401, detail="Invalid webhook signature")
         else:
-            _logger.warning("Payload vacío recibido")
-            return {
-                "status": "warning",
-                "message": "Payload vacío recibido"
-            }
+            _logger.warning(f"No webhook signature provided for event {webhook_headers.get('x_wc_webhook_delivery_id')}")
+
+        # Build event type
+        topic = webhook_headers.get("x_wc_webhook_topic", "unknown")
+        event = webhook_headers.get("x_wc_webhook_event", "unknown")
+        event_type = f"{topic.replace('.', '_')}_{event}".lower()
+
+        # Generate unique event ID
+        webhook_id = webhook_headers.get("x_wc_webhook_delivery_id") or \
+                     f"{event_type}_{webhook_payload.get('id')}_{int(time.time())}"
+
+        # Queue webhook processing task with Celery
+        task = process_webhook.apply_async(
+            args=[event_type, webhook_payload, webhook_id],
+            retry=True
+        )
+
+        _logger.info(f"Webhook queued for processing. Task ID: {task.id}")
+
+        return {
+            "status": "queued",
+            "message": f"Webhook queued for async processing",
+            "task_id": task.id,
+            "event_id": webhook_id,
+            "wc_product_id": webhook_payload.get("id"),
+            "webhook_event": event,
+            "webhook_topic": topic
+        }
+
+    except Exception as e:
+        _logger.error(f"Error processing webhook: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
     except json.JSONDecodeError as e:
         _logger.error(f"Error decodificando JSON del webhook: {e}")
@@ -352,7 +395,7 @@ async def get_odoo_categories(
         if not uid:
             raise HTTPException(
                 status_code=401,
-                detail="No se pudo autenticar con Odoo")
+                detail="Invalid Credentials")
 
         # Construir dominio de búsqueda
         domain = []
@@ -512,10 +555,14 @@ async def sync_categories_from_odoo(
 
 @router.post("/save-invoice/", summary="Guardar factura en Odoo", tags=["invoice"])
 async def save_invoice(
+        request: Request,
         data: OdooInvoiceSchema = Body(...),
         odoo: OdooClient = Depends(get_session_id),
 ):
 
+    chat_id = request.headers.get("chat-id", None)
+    private_chat_id = request.headers.get("private-chat-id", None)
+    username = request.headers.get("username", None)
     try:
         # Autenticar con Odoo
         uid = await odoo.odoo_authenticate()
@@ -531,8 +578,8 @@ async def save_invoice(
         vals.update({"name": reference})
 
         # Search partner by email
-        partner = vals.pop("client_email")
-        partner.pop("addres")
+        partner = vals.pop("client")
+        partner.pop("address")
 
         vals["partner_id"] = partner
         partner = await odoo.search_read(
@@ -586,7 +633,7 @@ async def save_invoice(
             line["price_unit"] = product["result"][0]["list_price"]
             line["quantity"] = line.pop("quantity")
             line["account_id"] = company["result"][0]["account_journal_suspense_account_id"][0]
-            line.pop("taxes")
+            # line.pop("taxes")
 
         invoice_date = datetime.strptime(
             vals["invoice_date"], "%d/%m/%Y")
@@ -598,7 +645,22 @@ async def save_invoice(
         vals["move_type"] = "out_invoice"
 
         invoice = odoo.create('account.move', vals)
+        # recuperar factura
+        invoice = await odoo.search_read(
+            uid,
+            "account.move",
+            domain=[
+                ["id", "=", invoice['result']]],
+            fields=["id", "name",],
+            limit=1, offset=0)
+        invoice_resut = invoice['result'][0]
 
+        if private_chat_id:
+            message_text = f"username: {username}\n📥 Factura creada: {invoice_resut['name']}"
+            await app.bot.send_message(chat_id=private_chat_id, text=message_text)
+        if chat_id:
+            message_text = f"username: {username}\n📥 Factura creada:  {invoice_resut['name']}"
+            await app.bot.send_message(chat_id=chat_id, text=message_text)
         if invoice.get("error"):
             error_msg = invoice["error"].get("message", "Error desconocido")
             _logger.error(f"Error creando factura en Odoo: {error_msg}")
@@ -607,6 +669,11 @@ async def save_invoice(
         raise e
     except Exception as e:
         _logger.error(f"Error inesperado creando factura: {e}")
+        msg = f"Error inesperado creando factura. Por favor contacta con el administrador del bot."
+        if private_chat_id:
+            await app.bot.send_message(chat_id=private_chat_id, text=msg)
+        if chat_id:
+            await app.bot.send_message(chat_id=chat_id, text=msg)
         raise HTTPException(status_code=500, detail=str(e))
 
     return {"odoo_invoice_id": invoice["result"]}

@@ -1,54 +1,77 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict, Any
 from decimal import Decimal
 
+
 class OdooProduct(BaseModel):
     """Modelo para productos que vienen desde Odoo"""
-    
+
     # Campos básicos
     id: Optional[int] = None  # ID en Odoo
     name: str
-    default_code: Optional[str] = Field(None, description="SKU del producto")  # SKU en Odoo
-    
+    default_code: Optional[str] = Field(
+        None, description="SKU del producto")  # SKU en Odoo
+    slug: Optional[str] = Field(None, description="Slug del producto")
     # Precios
     list_price: Optional[Decimal] = Field(None, description="Precio de venta")
-    standard_price: Optional[Decimal] = Field(None, description="Costo del producto")
-    
+    standard_price: Optional[Decimal] = Field(
+        None, description="Costo del producto")
+
     # Descripción y categoría
     description: Optional[str] = None
     description_sale: Optional[str] = None
     categ_id: Optional[int] = None
     categ_name: Optional[str] = None
-    
+
     # Estado y tipo
     active: bool = True
     sale_ok: bool = True
     purchase_ok: bool = True
     type: str = Field(default="product", description="consu, service, product")
-    
+
     # Inventario
-    qty_available: Optional[Decimal] = Field(None, description="Cantidad disponible")
-    virtual_available: Optional[Decimal] = Field(None, description="Cantidad virtual")
-    
+    qty_available: Optional[Decimal] = Field(
+        None, description="Cantidad disponible")
+    virtual_available: Optional[Decimal] = Field(
+        None, description="Cantidad virtual")
+
     # Atributos adicionales
     weight: Optional[Decimal] = None
     volume: Optional[Decimal] = None
     
+    # Dimensiones
+    ks_length: Optional[Decimal] = Field(None, description="Longitud")
+    ks_width: Optional[Decimal] = Field(None, description="Ancho")
+    ks_height: Optional[Decimal] = Field(None, description="Alto")
+
+    # Tags
+    product_tag_ids: Optional[List[Dict[str, Any]]] = Field(default_factory=list, description="Tags del producto")
+
     # Imágenes (URLs)
     image_urls: Optional[List[str]] = Field(default_factory=list)
-    
+
     # Metadatos
     create_date: Optional[str] = None
     write_date: Optional[str] = None
+    
+    @field_validator('active', 'sale_ok', 'purchase_ok', mode='before')
+    @classmethod
+    def convert_none_to_true(cls, v):
+        """Convierte None a True para campos booleanos que vienen de Odoo"""
+        return True if v is None else v
 
 
 class OdooToWooCommerceRequest(BaseModel):
     """Request para sincronizar productos de Odoo a WooCommerce"""
     products: List[OdooProduct]
-    create_if_not_exists: bool = Field(default=True, description="Crear producto si no existe")
-    update_existing: bool = Field(default=True, description="Actualizar si ya existe")
-    sync_images: bool = Field(default=False, description="Sincronizar imágenes")
-    default_status: str = Field(default="publish", description="Estado por defecto: draft, pending, private, publish")
+    create_if_not_exists: bool = Field(
+        default=True, description="Crear producto si no existe")
+    update_existing: bool = Field(
+        default=True, description="Actualizar si ya existe")
+    sync_images: bool = Field(
+        default=False, description="Sincronizar imágenes")
+    default_status: str = Field(
+        default="publish", description="Estado por defecto: draft, pending, private, publish")
 
 
 class ProductSyncResult(BaseModel):
@@ -60,6 +83,16 @@ class ProductSyncResult(BaseModel):
     success: bool
     message: str
     error_details: Optional[str] = None
+    
+    # Variant tracking fields
+    is_variable: bool = False
+    has_variants: bool = False
+    variant_count: Optional[int] = None
+    variants_synced: Optional[int] = None
+    variants_updated: Optional[int] = None
+    variants_failed: Optional[int] = None
+    variant_errors: Optional[List[str]] = None
+
 
 class OdooToWooCommerceSyncResponse(BaseModel):
     """Respuesta completa de sincronización"""
@@ -71,6 +104,7 @@ class OdooToWooCommerceSyncResponse(BaseModel):
     skipped: int
     results: List[ProductSyncResult]
     sync_duration_seconds: Optional[float] = None
+
 
 class WooCommerceProductCreate(BaseModel):
     """Modelo para crear/actualizar productos en WooCommerce"""
@@ -86,10 +120,11 @@ class WooCommerceProductCreate(BaseModel):
     in_stock: bool = True
     status: str = "publish"  # draft, pending, private, publish
     categories: Optional[List[Dict[str, Any]]] = None
+    tags: Optional[List[Dict[str, Any]]] = None
     images: Optional[List[Dict[str, str]]] = None
     weight: Optional[str] = None
     dimensions: Optional[Dict[str, str]] = None
-    
+    slug: Optional[str] = None
     class Config:
         # Permitir campos adicionales para flexibilidad
         extra = "allow"
@@ -97,19 +132,22 @@ class WooCommerceProductCreate(BaseModel):
 
 class OdooCategory(BaseModel):
     """Modelo para categorías de productos que vienen desde Odoo"""
-    
+
     # Campos básicos
     id: int  # ID en Odoo
     name: str
-    complete_name: Optional[str] = Field(None, description="Nombre completo con jerarquía")
-    
+    complete_name: Optional[str] = Field(
+        None, description="Nombre completo con jerarquía")
+
     # Jerarquía
-    parent_id: Optional[int] = Field(None, description="ID de la categoría padre en Odoo")
-    parent_name: Optional[str] = Field(None, description="Nombre de la categoría padre")
-    
+    parent_id: Optional[int] = Field(
+        None, description="ID de la categoría padre en Odoo")
+    parent_name: Optional[str] = Field(
+        None, description="Nombre de la categoría padre")
+
     # Descripción
     description: Optional[str] = None
-    
+
     # Metadatos
     create_date: Optional[str] = None
     write_date: Optional[str] = None
@@ -129,9 +167,12 @@ class CategorySyncResult(BaseModel):
 class OdooCategoriesToWooCommerceRequest(BaseModel):
     """Request para sincronizar categorías de Odoo a WooCommerce"""
     categories: List[OdooCategory]
-    create_if_not_exists: bool = Field(default=True, description="Crear categoría si no existe")
-    update_existing: bool = Field(default=True, description="Actualizar si ya existe")
-    create_hierarchy: bool = Field(default=True, description="Crear jerarquía de categorías padre-hijo")
+    create_if_not_exists: bool = Field(
+        default=True, description="Crear categoría si no existe")
+    update_existing: bool = Field(
+        default=True, description="Actualizar si ya existe")
+    create_hierarchy: bool = Field(
+        default=True, description="Crear jerarquía de categorías padre-hijo")
 
 
 class OdooCategoriesToWooCommerceSyncResponse(BaseModel):
@@ -150,11 +191,13 @@ class WooCommerceCategoryCreate(BaseModel):
     """Modelo para crear/actualizar categorías en WooCommerce"""
     name: str
     slug: Optional[str] = None
-    parent: Optional[int] = Field(None, description="ID de la categoría padre en WooCommerce")
+    parent: Optional[int] = Field(
+        None, description="ID de la categoría padre en WooCommerce")
     description: Optional[str] = None
-    display: str = Field(default="default", description="default, products, subcategories, both")
+    display: str = Field(
+        default="default", description="default, products, subcategories, both")
     image: Optional[Dict[str, str]] = None
     menu_order: int = Field(default=0)
-    
+
     class Config:
         extra = "allow"

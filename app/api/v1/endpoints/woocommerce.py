@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
+from app.auth.oauth2 import get_current_user
+from app.models.admin import Admin
 from app.models.product_models import (
     OdooProduct,
     OdooToWooCommerceRequest,
@@ -30,9 +32,7 @@ from app.services.woocommerce import background_full_sync, \
     push_to_odoo, wc_request
 from app.crud.category_sync import get_categories_map
 from app.db.session import get_db
-from app.crud.admin import save_categroy_sync, \
-    get_categroy_by_odoo_id, update_categroy_sync, \
-    save_product_sync, get_product_sync_by_odoo_id, update_product_sync
+from app.repositories import ProductSyncRepository, CategorySyncRepository
 from app.schemas.admin import CategorySyncCreate, ProductSyncCreate
 router = APIRouter(prefix="/woocommerce", tags=["woocommerce"])
 
@@ -44,7 +44,7 @@ def list_products(page: int = Query(1, ge=1), per_page: int = Query(20, ge=1, le
     params = {"page": page, "per_page": per_page}
     if status:
         params["status"] = status
-    data = wc_request("GET", "/products", params=params)
+    data = wc_request("GET", "products", params=params)
     return [
         Product(
             id=p["id"],
@@ -59,14 +59,22 @@ def list_products(page: int = Query(1, ge=1), per_page: int = Query(20, ge=1, le
 
 
 @router.post("/products/sync/{product_id}", response_model=SyncResult)
-def sync_product(product_id: int):
+def sync_product(
+    product_id: int,
+    db: Session = Depends(get_db),
+    current_user: Admin = Depends(get_current_user)
+):
     product = fetch_wc_product(product_id)
     ok = push_to_odoo(product)
     return SyncResult(product_id=product_id, synced=ok, detail="Synced" if ok else "Failed")
 
 
 @router.post("/products/sync", response_model=BulkSyncResponse)
-def bulk_sync(body: BulkSyncRequest):
+def bulk_sync(
+    body: BulkSyncRequest,
+    db: Session = Depends(get_db),
+    current_user: Admin = Depends(get_current_user)
+):
     results: List[SyncResult] = []
     for pid in body.product_ids:
         try:
@@ -81,7 +89,11 @@ def bulk_sync(body: BulkSyncRequest):
 
 
 @router.post("/products/full-sync")
-def full_sync(background: BackgroundTasks):
+def full_sync(
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: Admin = Depends(get_current_user)
+):
     task_id = str(uuid.uuid4())
     TASKS[task_id] = {"status": "queued", "processed": 0}
     background.add_task(background_full_sync(task_id))
@@ -89,7 +101,11 @@ def full_sync(background: BackgroundTasks):
 
 
 @router.get("/sync/status/{task_id}")
-def sync_status(task_id: str):
+def sync_status(
+    task_id: str,
+    db: Session = Depends(get_db),
+    current_user: Admin = Depends(get_current_user)
+):
     task = TASKS.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -140,19 +156,56 @@ async def sync_products_from_odoo(request: OdooToWooCommerceRequest,
             counters["successful"] += 1
             counters[sync_result.action] += 1
 
-            # Guardar mapeo Odoo ID -> WooCommerce ID en la tabla product_sync
-            if sync_result.woocommerce_id:
-                db_item = get_product_sync_by_odoo_id(db, odoo_product.id)
-                prod_sync_data = ProductSyncCreate(
-                    odoo_id=odoo_product.id,
-                    woocommerce_id=sync_result.woocommerce_id
-                )
-                if db_item:
-                    update_product_sync(db, db_item, prod_sync_data)
+            # Guardar mapeo Odoo ID -> WooCommerce ID usando ProductSyncRepository
+            if sync_result.woocommerce_id and odoo_product.id:
+                sync_repo = ProductSyncRepository(db)
+                existing_sync = sync_repo.get_sync_by_odoo_id(odoo_product.id, instance_id)
+                
+                if existing_sync:
+                    # Actualizar registro existente
+                    sync_repo.update_sync(
+                        sync_id=existing_sync.id,
+                        woocommerce_id=sync_result.woocommerce_id,
+                        created=sync_result.action == "created",
+                        updated=sync_result.action == "updated",
+                        skipped=sync_result.action == "skipped",
+                        error=False,
+                        message=sync_result.message
+                    )
                 else:
-                    save_product_sync(db, prod_sync_data)
+                    # Crear nuevo registro
+                    sync_repo.create_product_sync(
+                        odoo_id=odoo_product.id,
+                        woocommerce_id=sync_result.woocommerce_id,
+                        created=sync_result.action == "created",
+                        updated=sync_result.action == "updated",
+                        skipped=sync_result.action == "skipped",
+                        error=False,
+                        message=sync_result.message
+                    )
         else:
             counters["failed"] += 1
+            
+            # Registrar error en ProductSync
+            if odoo_product.id:
+                sync_repo = ProductSyncRepository(db)
+                existing_sync = sync_repo.get_sync_by_odoo_id(odoo_product.id, instance_id)
+                
+                if existing_sync:
+                    sync_repo.update_sync(
+                        sync_id=existing_sync.id,
+                        error=True,
+                        message=sync_result.message,
+                        error_details=sync_result.error_details
+                    )
+                else:
+                    sync_repo.create_product_sync(
+                        odoo_id=odoo_product.id,
+                        woocommerce_id=sync_result.woocommerce_id or 0,
+                        error=True,
+                        message=sync_result.message,
+                        error_details=sync_result.error_details
+                    )
 
     end_time = time.time()
 
@@ -172,7 +225,8 @@ async def sync_products_from_odoo(request: OdooToWooCommerceRequest,
              response_model=OdooCategoriesToWooCommerceSyncResponse)
 async def sync_categories_from_odoo(
     request: OdooCategoriesToWooCommerceRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
     Sincroniza categorías desde Odoo hacia WooCommerce
@@ -181,6 +235,17 @@ async def sync_categories_from_odoo(
     crea/actualiza en WooCommerce. Si create_hierarchy está activado,
     procesará primero las categorías padre.
     """
+    from app.crud import instance as crud_instance
+    
+    # Obtener instancia activa
+    instance = crud_instance.get_active_instance(db, user_id=current_user.id)
+    if not instance:
+        raise HTTPException(
+            status_code=404,
+            detail="No hay ninguna instancia activa. Por favor activa una instancia."
+        )
+    instance_id = instance.id
+    
     start_time = time.time()
 
     results = []
@@ -232,21 +297,58 @@ async def sync_categories_from_odoo(
             counters["successful"] += 1
             counters[sync_result.action] += 1
 
-            # Guardar mapeo Odoo ID -> WooCommerce ID en la tabla
+            # Guardar mapeo Odoo ID -> WooCommerce ID usando CategorySyncRepository
             if sync_result.woocommerce_id:
                 categories_map[odoo_category.id] = sync_result.woocommerce_id
-                # Guardar en DB
-                db_item = get_categroy_by_odoo_id(db, odoo_category.id)
-                cat_sync_data = CategorySyncCreate(
-                    odoo_id=odoo_category.id,
-                    woocommerce_id=sync_result.woocommerce_id
-                )
-                if db_item:
-                    update_categroy_sync(db, db_item, cat_sync_data)
+                sync_repo = CategorySyncRepository(db)
+                existing_sync = sync_repo.get_sync_by_odoo_id(odoo_category.id, instance_id)
+                
+                if existing_sync:
+                    # Actualizar registro existente
+                    sync_repo.update_sync(
+                        sync_id=existing_sync.id,
+                        woocommerce_id=sync_result.woocommerce_id,
+                        created=sync_result.action == "created",
+                        updated=sync_result.action == "updated",
+                        skipped=sync_result.action == "skipped",
+                        error=False,
+                        message=sync_result.message
+                    )
                 else:
-                    save_categroy_sync(db, cat_sync_data)
+                    # Crear nuevo registro
+                    sync_repo.create_category_sync(
+                        odoo_id=odoo_category.id,
+                        woocommerce_id=sync_result.woocommerce_id,
+                        instance_id=instance_id,
+                        created=sync_result.action == "created",
+                        updated=sync_result.action == "updated",
+                        skipped=sync_result.action == "skipped",
+                        error=False,
+                        message=sync_result.message
+                    )
         else:
             counters["failed"] += 1
+            
+            # Registrar error en CategorySync
+            sync_repo = CategorySyncRepository(db)
+            existing_sync = sync_repo.get_sync_by_odoo_id(odoo_category.id, instance_id)
+            
+            if existing_sync:
+                sync_repo.update_sync(
+                    sync_id=existing_sync.id,
+                    error=True,
+                    message=sync_result.message,
+                    error_details=sync_result.error_details
+                )
+            else:
+                sync_repo.create_category_sync(
+                    odoo_id=odoo_category.id,
+                    woocommerce_id=sync_result.woocommerce_id or 0,
+                    instance_id=instance_id,
+                    error=True,
+                    message=sync_result.message,
+                    error_details=sync_result.error_details
+                )
 
     end_time = time.time()
 

@@ -47,6 +47,7 @@ class Admin(AdminBase):
 
 class CategorySyncBase(BaseModel):
     odoo_id: int
+    odoo_name: Optional[str] = None
     woocommerce_id: int
     created: Optional[bool] = None
     updated: Optional[bool] = None
