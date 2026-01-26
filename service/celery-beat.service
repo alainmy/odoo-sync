@@ -4,23 +4,23 @@ After=network.target redis.service postgresql.service
 
 [Service]
 Type=simple
-User=www-data
-Group=www-data
-WorkingDirectory=/home/usuario/apitm/microservices/transfermovil
+User=root
+Group=root
+WorkingDirectory=/var/www/odoo-sync
 
-# Cargar variables de entorno desde .env
-EnvironmentFile=/home/usuario/apitm/microservices/transfermovil/.env
+# Cargar variables de entorno desde .env (opcional)
+EnvironmentFile=-/var/www/odoo-sync/.env
 
 # Path de Python
-Environment="PYTHONPATH=/home/usuario/apitm/microservices/transfermovil"
+Environment="PYTHONPATH=/var/www/odoo-sync"
 Environment="TZ=America/Havana"
 
 # Comando para ejecutar Celery Beat
-ExecStart=/usr/bin/python3 -m celery -A app.celery_app.celery_app beat --loglevel=info
+ExecStart=/var/www/venv/bin/python3 -m celery -A app.celery_app.celery_app beat --loglevel=info
 
 # Logs
-StandardOutput=append:/var/log/apitm/celery-beat.log
-StandardError=append:/var/log/apitm/celery-beat-error.log
+StandardOutput=append:/var/log/celery-beat.log
+StandardError=append:/var/log/celery-beat-error.log
 
 # Reiniciar automáticamente si falla
 Restart=always

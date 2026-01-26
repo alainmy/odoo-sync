@@ -4,24 +4,24 @@ After=network.target postgresql.service redis.service
 
 [Service]
 Type=simple
-User=www-data
-Group=www-data
-WorkingDirectory=/home/usuario/woocommerce_odoo/microservices/admin
+User=root
+Group=root
+WorkingDirectory=/var/www/odoo-sync
 
-# Cargar variables de entorno desde .env
-EnvironmentFile=/home/usuario/woocommerce_odoo/microservices/admin/.env
+# Cargar variables de entorno desde .env (opcional)
+EnvironmentFile=-/var/www/odoo-sync/.env
 
 # Path de Python
-Environment="PYTHONPATH=/home/usuario/woocommerce_odoo/microservices/admin"
+Environment="PYTHONPATH=/var/www/odoo-sync"
 Environment="TZ=America/Havana"
 
 # Comando para ejecutar FastAPI con Uvicorn
 # Ajustar la ruta del intérprete de Python según tu instalación
-ExecStart=/usr/bin/python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 4
+ExecStart=/var/www/venv/bin/python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 4
 
 # Logs
-StandardOutput=append:/var/log/woocommerce-odoo/fastapi.log
-StandardError=append:/var/log/woocommerce-odoo/fastapi-error.log
+StandardOutput=append:/var/log/fastapi.log
+StandardError=append:/var/log/fastapi-error.log
 
 # Reiniciar automáticamente si falla
 Restart=always
