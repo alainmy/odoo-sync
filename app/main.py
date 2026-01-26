@@ -7,6 +7,16 @@ from app.api.v1.endpoints.odoo import router as odoo_router
 from app.api.v1.endpoints.auth import router as auth_router
 from app.api.v1.endpoints.woocommerce import router as woocommerce_router
 from app.api.v1.endpoints.proccess_invoice import router as invoice_router
+from app.api.v1.endpoints.projects_router import router as projects_router
+from app.api.v1.endpoints.sync_logs import router as sync_logs_router
+from app.api.v1.endpoints.sync_management import router as sync_management_router
+from app.api.v1.endpoints.category_tag_management import router as category_tag_management_router
+from app.api.v1.endpoints.attributes import router as attributes_router, management_router as attributes_management_router
+from app.api.instances import router as instances_router
+from app.api.v1.endpoints.task_monitoring import router as task_monitoring_router
+from app.api.v1.endpoints.pricelists import router as pricelists_router
+from app.api.v1.endpoints.webhooks import router as webhooks_router
+from app.api.v1.endpoints.webhook_receiver import router as webhook_receiver_router
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.session import get_session, create_session, lifespan
@@ -84,6 +94,17 @@ app.include_router(odoo_router, prefix="/odoo", tags=["odoo"])
 app.include_router(woocommerce_router, prefix="/woocommerce", tags=["woocommerce"])
 # app.include_router(books_router, prefix="/bookscraping", tags=["bookscraping"])
 app.include_router(invoice_router, prefix="/invoice", tags=["invoice"])
+app.include_router(projects_router, prefix="/projects", tags=["projects"])
+app.include_router(sync_logs_router, prefix="/api/v1/sync", tags=["sync-logs"])
+app.include_router(task_monitoring_router, prefix="/api/v1/sync", tags=["task-monitoring"])
+app.include_router(sync_management_router, prefix="/api/v1", tags=["sync-management"])
+app.include_router(category_tag_management_router, prefix="/api/v1", tags=["category-tag-management"])
+app.include_router(attributes_router, prefix="/api/v1", tags=["attributes"])
+app.include_router(attributes_management_router, prefix="/api/v1", tags=["attribute-management"])
+app.include_router(instances_router, prefix="/api/v1", tags=["instances"])
+app.include_router(pricelists_router, prefix="/api/v1/pricelists", tags=["pricelists"])
+app.include_router(webhooks_router, prefix="/api/v1/webhooks", tags=["webhooks"])
+app.include_router(webhook_receiver_router, prefix="/api/v1/webhook-receiver", tags=["webhook-receiver"])
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=5010, reload=True)
