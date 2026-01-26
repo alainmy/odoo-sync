@@ -11,7 +11,7 @@ BASE_PROJECTS_PATH = "D:\DOCUMENTS\Proyectos\Odoo\proyectos"
 
 DB_URL = "postgresql://postgres:postgres@woocommerce_odoo_postgres:5432/knowledgebase"
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI(api_key="")
 # conn = psycopg2.connect(DB_URL)
 # cur = conn.cursor()
 
