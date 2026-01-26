@@ -5,13 +5,13 @@ from openai import OpenAI
 import tiktoken
 
 # ---------------- CONFIG ----------------
-OPENAI_API_KEY = "TU_API_KEY"
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 EMBEDDING_MODEL = "text-embedding-3-small"
 BASE_PROJECTS_PATH = "D:\DOCUMENTS\Proyectos\Odoo\proyectos"
 
 DB_URL = "postgresql://postgres:postgres@woocommerce_odoo_postgres:5432/knowledgebase"
 
-client = OpenAI(api_key="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")
+client = OpenAI(api_key=OPENAI_API_KEY)
 # conn = psycopg2.connect(DB_URL)
 # cur = conn.cursor()
 
