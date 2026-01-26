@@ -1,0 +1,37 @@
+[Unit]
+Description=APITM Celery Worker Service
+After=network.target redis.service postgresql.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/home/cloud/apitm/microservices/transfermovil
+
+# Cargar variables de entorno desde .env
+EnvironmentFile=/home/cloud/apitm/microservices/transfermovil/.env
+
+# Path de Python
+Environment="PYTHONPATH=/home/cloud/apitm/microservices/transfermovil"
+Environment="TZ=America/Havana"
+
+# Comando para ejecutar Celery Worker
+ExecStart=/usr/bin/python3 -m celery -A app.celery_app.celery_app worker --loglevel=info --concurrency=4
+
+# Reiniciar automáticamente si falla
+Restart=always
+RestartSec=5
+
+# Detener limpiamente (enviar SIGTERM)
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Logs
+StandardOutput=append:/var/log/apitm/celery-worker.log
+StandardError=append:/var/log/apitm/celery-worker-error.log
+
+# Límites de recursos
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
