@@ -1,0 +1,34 @@
+[Unit]
+Description=APITM FastAPI Service
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/home/cloud/apitm/microservices/transfermovil
+
+# Cargar variables de entorno desde .env
+EnvironmentFile=/home/cloud/apitm/microservices/transfermovil/.env
+
+# Path de Python
+Environment="PYTHONPATH=/home/cloud/apitm/microservices/transfermovil"
+Environment="TZ=America/Havana"
+
+# Comando para ejecutar FastAPI con Uvicorn
+# Ajustar la ruta del intérprete de Python según tu instalación
+ExecStart=/usr/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8001 --workers 4
+
+# Logs
+StandardOutput=append:/var/log/apitm/fastapi.log
+StandardError=append:/var/log/apitm/fastapi-error.log
+
+# Reiniciar automáticamente si falla
+Restart=always
+RestartSec=5
+
+# Límites de recursos (opcional)
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

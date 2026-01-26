@@ -1,0 +1,37 @@
+[Unit]
+Description=APITM Celery Beat Scheduler Service
+After=network.target redis.service postgresql.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/home/usuario/apitm/microservices/transfermovil
+
+# Cargar variables de entorno desde .env
+EnvironmentFile=/home/usuario/apitm/microservices/transfermovil/.env
+
+# Path de Python
+Environment="PYTHONPATH=/home/usuario/apitm/microservices/transfermovil"
+Environment="TZ=America/Havana"
+
+# Comando para ejecutar Celery Beat
+ExecStart=/usr/bin/python3 -m celery -A app.celery_app.celery_app beat --loglevel=info
+
+# Logs
+StandardOutput=append:/var/log/apitm/celery-beat.log
+StandardError=append:/var/log/apitm/celery-beat-error.log
+
+# Reiniciar automáticamente si falla
+Restart=always
+RestartSec=5
+
+# Detener limpiamente
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Límites de recursos
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,33 @@
+[Unit]
+Description=APITM Frontend Build and Serve Service
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/home/cloud/apitm/frontend
+
+# Variables de entorno
+Environment="NODE_ENV=production"
+Environment="PATH=/usr/bin:/usr/local/bin"
+
+# Construir el frontend cada vez que se inicia el servicio
+# Esto es útil si actualizas el código y quieres reconstruir automáticamente
+ExecStartPre=/usr/bin/npm install --production=false
+ExecStartPre=/usr/bin/npm run build
+
+# Servir archivos estáticos con serve (npm install -g serve)
+# Alternativa: Nginx servirá estos archivos directamente, este servicio es opcional
+ExecStart=/usr/bin/npx serve -s dist -l 3000
+
+# Logs
+StandardOutput=append:/var/log/apitm/frontend.log
+StandardError=append:/var/log/apitm/frontend-error.log
+
+# Reiniciar automáticamente si falla
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
