@@ -32,14 +32,14 @@ class OdooClient:
     }
     uid = 2
 
-    def __init__(self, url=ODOO_URL, db=ODOO_DB,
-                 username=ODOO_USERNAME,
-                 password=ODOO_PASSWORD,
+    def __init__(self, url=None, db=None,
+                 username=None,
+                 password=None,
                  context={}):
-        self.url = url
-        self.db = db
-        self.username = username
-        self.password = password
+        self.url = url if url else ODOO_URL
+        self.db = db if db else ODOO_DB
+        self.username = username if username else ODOO_USERNAME
+        self.password = password if password else ODOO_PASSWORD
         self.context = context if context else self.context
 
     async def odoo_authenticate(self):
