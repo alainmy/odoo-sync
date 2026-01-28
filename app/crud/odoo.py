@@ -60,7 +60,8 @@ class OdooClient:
             response = requests.post(f"{self.url}/jsonrpc", json=payload)
             result = response.json()
             logger.info(f"Odoo authentication response: {result}")
-            if "error" in result:
+            if result.get("error"):
+                logger.error(f"Odoo authentication error: {result['error']}")
                 return None
             self.uid = result["result"]
             return result["result"]
