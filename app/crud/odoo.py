@@ -3,6 +3,7 @@
 import json
 import os
 import dotenv
+from fastapi import HTTPException
 import requests
 import logging
 
@@ -50,9 +51,9 @@ class OdooClient:
                 "service": "common",
                 "method": "login",
                 "args": [
-                    os.environ.get("ODOO_DB"),
-                    self.username,
-                    self.password
+                    self.db if self.db else ODOO_DB,
+                    self.username if self.username else ODOO_USERNAME,
+                    self.password if self.password else ODOO_PASSWORD
                 ]
             },
         }
@@ -62,12 +63,13 @@ class OdooClient:
             logger.info(f"Odoo authentication response: {result}")
             if result.get("error"):
                 logger.error(f"Odoo authentication error: {result['error']}")
-                return None
+                raise HTTPException(status_code=500,
+                                    detail=str(result["error"]))
             self.uid = result["result"]
             return result["result"]
         except Exception as e:
             logger.error(f"Error authenticating to Odoo: {str(e)}")
-            return None
+            raise HTTPException(status_code=500, detail=str(e))
 
     async def search_read(self,
                           uid,
@@ -101,12 +103,20 @@ class OdooClient:
             },
             "id": 2
         }
-        base_url = os.environ.get("ODOO_URL")
         headers = {"Cookie": f"session_id={1}"}
-        response = requests.post(f"{self.url}/jsonrpc",
-                                 json=payload, headers=headers)
-        result = response.json()
-        return result
+        try:
+            response = requests.post(f"{self.url}/jsonrpc",
+                                     json=payload, headers=headers)
+            result = response.json()
+            if result.get("error"):
+                logger.error(f"Odoo search_read error: {result['error']}")
+                raise HTTPException(status_code=500,
+                                    detail=str(result["error"]))
+            logger.info(f"Odoo search_read response: {result}")
+            return result
+        except Exception as e:
+            logger.error(f"Error in search_read: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
 
     def search_read_sync(self,
                          model,

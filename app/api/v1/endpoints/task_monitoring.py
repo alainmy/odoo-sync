@@ -193,7 +193,7 @@ async def get_task_summary(
     """
     try:
         from datetime import timedelta
-        from sqlalchemy import func
+        from sqlalchemy import func, literal_column
         from app.models.admin import CeleryTaskLog
         
         cutoff = datetime.utcnow() - timedelta(hours=hours)
@@ -222,7 +222,7 @@ async def get_task_summary(
         avg_duration = db.query(
             func.avg(
                 func.timestampdiff(
-                    'SECOND',
+                    literal_column("SECOND"),
                     CeleryTaskLog.started_at,
                     CeleryTaskLog.completed_at
                 )
