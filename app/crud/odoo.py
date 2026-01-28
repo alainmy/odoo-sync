@@ -51,11 +51,14 @@ class OdooClient:
                 ]
             },
         }
-        response = requests.post(f"{self.url}/jsonrpc", json=payload)
-        result = response.json()
-        self.uid = result["result"]
-        return result["result"]
-
+        try:
+            response = requests.post(f"{self.url}/jsonrpc", json=payload)
+            result = response.json()
+            self.uid = result["result"]
+            return result["result"]
+        except Exception as e:
+            print(f"Error authenticating to Odoo: {str(e)}")
+            return None
     async def search_read(self,
                           uid,
                           model,
