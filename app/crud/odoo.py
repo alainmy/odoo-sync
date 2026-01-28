@@ -5,9 +5,12 @@ import os
 import dotenv
 import requests
 import logging
+
+logger = logging.getLogger(__name__)
+
 dotenv.load_dotenv()
 
-__logger = logging.getLogger(__name__)
+
 ODOO_URL = "http://host.docker.internal:8069"
 ODOO_DB = "c4e"
 ODOO_USERNAME = "admin"
@@ -56,13 +59,13 @@ class OdooClient:
         try:
             response = requests.post(f"{self.url}/jsonrpc", json=payload)
             result = response.json()
-            __logger.info(f"Odoo authentication response: {result}")
+            logger.info(f"Odoo authentication response: {result}")
             if "error" in result:
                 return None
             self.uid = result["result"]
             return result["result"]
         except Exception as e:
-            __logger.error(f"Error authenticating to Odoo: {str(e)}")
+            logger.error(f"Error authenticating to Odoo: {str(e)}")
             return None
 
     async def search_read(self,
