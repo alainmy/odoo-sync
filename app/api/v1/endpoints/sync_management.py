@@ -137,7 +137,9 @@ async def list_odoo_products_with_sync_status(
                 "offset": offset
             }
         )
-
+    except HTTPException as ex:
+        logger.error(f"HTTPException in list_odoo_products_with_sync_status: {ex.detail}")
+        raise
     except Exception as e:
         logger.error(
             f"Error fetching products with sync status: {e}", exc_info=True)
