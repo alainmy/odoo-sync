@@ -4,23 +4,23 @@ After=network.target redis.service postgresql.service
 
 [Service]
 Type=simple
-User=www-data
-Group=www-data
-WorkingDirectory=/home/usuario/woocommerce_odoo/microservices/admin
+User=root
+Group=root
+WorkingDirectory=/var/www/odoo-sync
 
-# Cargar variables de entorno desde .env
-EnvironmentFile=/home/usuario/woocommerce_odoo/microservices/admin/.env
+# Cargar variables de entorno desde .env (opcional)
+EnvironmentFile=-/var/www/odoo-sync/.env
 
 # Path de Python
-Environment="PYTHONPATH=/home/usuario/woocommerce_odoo/microservices/admin"
+Environment="PYTHONPATH=/var/www/odoo-sync"
 Environment="TZ=America/Havana"
 
 # Comando para ejecutar Celery Worker Scheduler
-ExecStart=/usr/bin/python3 -m celery -A app.celery_app worker -Q scheduler_queue -c 2 -n scheduler@%h --loglevel=info
+ExecStart=/var/www/venv/bin/python3 -m celery -A app.celery_app worker -Q scheduler_queue -c 2 -n scheduler@%h --loglevel=info
 
 # Logs
-StandardOutput=append:/var/log/woocommerce-odoo/celery-worker-scheduler.log
-StandardError=append:/var/log/woocommerce-odoo/celery-worker-scheduler-error.log
+StandardOutput=append:/var/log/celery-worker-scheduler.log
+StandardError=append:/var/log/celery-worker-scheduler-error.log
 
 # Reiniciar automáticamente si falla
 Restart=always

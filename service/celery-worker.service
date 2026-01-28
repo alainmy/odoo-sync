@@ -4,8 +4,8 @@ After=network.target redis.service postgresql.service
 
 [Service]
 Type=simple
-User=www-data
-Group=www-data
+User=root
+Group=root
 WorkingDirectory=/home/cloud/apitm/microservices/transfermovil
 
 # Cargar variables de entorno desde .env
