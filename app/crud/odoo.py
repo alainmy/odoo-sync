@@ -103,7 +103,7 @@ class OdooClient:
         }
         base_url = os.environ.get("ODOO_URL")
         headers = {"Cookie": f"session_id={1}"}
-        response = requests.post(f"{base_url}/jsonrpc",
+        response = requests.post(f"{self.url}/jsonrpc",
                                  json=payload, headers=headers)
         result = response.json()
         return result
