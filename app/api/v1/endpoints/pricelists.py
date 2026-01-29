@@ -27,6 +27,7 @@ from app.tasks.pricelist_tasks import (
     sync_all_product_prices_task,
     fetch_odoo_pricelists_task
 )
+from app.api.v1.endpoints.odoo import get_session_id, get_odoo_from_active_instance
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -172,26 +173,15 @@ def delete_pricelist_config(
 # ============================================================================
 
 @router.get("/odoo/pricelists", response_model=List[OdooPricelist])
-async def get_odoo_pricelists():
+async def get_odoo_pricelists(
+    odoo: OdooClient = Depends(get_odoo_from_active_instance),
+):
     """
     Fetch all active pricelists from Odoo.
     Useful for populating dropdown selections in UI.
     """
     try:
-        odoo_config = {
-            "url": settings.odoo_url,
-            "db": settings.odoo_db,
-            "username": settings.odoo_username,
-            "password": settings.odoo_password
-        }
-        
-        odoo_client = OdooClient(
-            odoo_config["url"],
-            odoo_config["db"],
-            odoo_config["username"],
-            odoo_config["password"]
-        )
-        pricelists = odoo_client.search_read_sync(
+        pricelists = odoo.search_read_sync(
             'product.pricelist',
             domain=[('active', '=', True)],
             fields=['id', 'name', 'currency_id', 'active']
@@ -236,12 +226,12 @@ async def sync_product_prices(
             detail=f"Instance {request.instance_id} not found"
         )
     
-    # Prepare configs
+    # Prepare configs from instance
     odoo_config = {
-        "url": settings.odoo_url,
-        "db": settings.odoo_db,
-        "username": settings.odoo_username,
-        "password": settings.odoo_password
+        "url": instance.odoo_url,
+        "db": instance.odoo_db,
+        "username": instance.odoo_username,
+        "password": instance.odoo_password
     }
     wc_config = {
         "url": instance.woocommerce_url,
@@ -274,7 +264,8 @@ async def sync_product_prices(
 @router.post("/sync/product/immediate", response_model=PriceSyncResult)
 async def sync_product_prices_immediate(
     request: ProductPriceUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    odoo: OdooClient = Depends(get_odoo_from_active_instance)
 ):
     """
     Sync prices for a single product immediately (synchronous).
@@ -295,30 +286,18 @@ async def sync_product_prices_immediate(
                 detail=f"Instance {request.instance_id} not found"
             )
         
-        # Prepare configs
-        odoo_config = {
-            "url": settings.odoo_url,
-            "db": settings.odoo_db,
-            "username": settings.odoo_username,
-            "password": settings.odoo_password
-        }
+        # Prepare WooCommerce config
         wc_config = {
             "url": instance.woocommerce_url,
             "consumer_key": instance.woocommerce_consumer_key,
             "consumer_secret": instance.woocommerce_consumer_secret
         }
         
-        odoo_client = OdooClient(
-            odoo_config["url"],
-            odoo_config["db"],
-            odoo_config["username"],
-            odoo_config["password"]
-        )
         wcapi = create_wc_api_client(wc_config)
         
         service = PricelistService(db)
         result = service.sync_product_prices(
-            odoo_client,
+            odoo,
             request.odoo_product_id,
             request.instance_id,
             wcapi
@@ -359,12 +338,12 @@ async def sync_bulk_prices(
             detail=f"Instance {request.instance_id} not found"
         )
     
-    # Prepare configs
+    # Prepare configs from instance
     odoo_config = {
-        "url": settings.odoo_url,
-        "db": settings.odoo_db,
-        "username": settings.odoo_username,
-        "password": settings.odoo_password
+        "url": instance.odoo_url,
+        "db": instance.odoo_db,
+        "username": instance.odoo_username,
+        "password": instance.odoo_password
     }
     wc_config = {
         "url": instance.woocommerce_url,
@@ -395,7 +374,8 @@ async def sync_bulk_prices(
 @router.post("/sync/bulk/immediate", response_model=BulkPriceSyncResponse)
 async def sync_bulk_prices_immediate(
     request: BulkPriceSyncRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    odoo: OdooClient = Depends(get_odoo_from_active_instance)
 ):
     """
     Sync prices for multiple products immediately (synchronous).
@@ -417,30 +397,18 @@ async def sync_bulk_prices_immediate(
                 detail=f"Instance {request.instance_id} not found"
             )
         
-        # Prepare configs
-        odoo_config = {
-            "url": settings.odoo_url,
-            "db": settings.odoo_db,
-            "username": settings.odoo_username,
-            "password": settings.odoo_password
-        }
+        # Prepare WooCommerce config
         wc_config = {
             "url": instance.woocommerce_url,
             "consumer_key": instance.woocommerce_consumer_key,
             "consumer_secret": instance.woocommerce_consumer_secret
         }
         
-        odoo_client = OdooClient(
-            odoo_config["url"],
-            odoo_config["db"],
-            odoo_config["username"],
-            odoo_config["password"]
-        )
         wcapi = create_wc_api_client(wc_config)
         
         service = PricelistService(db)
         results = service.sync_all_product_prices(
-            odoo_client,
+            odoo,
             request.instance_id,
             request.product_ids,
             wcapi

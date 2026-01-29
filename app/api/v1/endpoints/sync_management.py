@@ -349,7 +349,7 @@ async def get_sync_queue(
 async def detect_changes(
     request_data: DetectChangesRequest,
     db: Session = Depends(get_db),
-    odoo: OdooClient = Depends(get_session_id)
+    odoo: OdooClient = Depends(get_odoo_from_active_instance)
 ):
     """
     Detect products that have been modified in Odoo since last sync.

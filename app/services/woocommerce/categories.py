@@ -85,7 +85,11 @@ def category_for_export(
         ).first()
         woocommerce_id = existing_sync.woocommerce_id if existing_sync else None
         slug = category_data["name"].replace(" ", "-").lower().strip()
-        slug = slug + str(category_data.get("id", ""))
+        slug = slug + '-' + str(category_data.get("id", "")) + '-' + str(instance_id)
+        parent = db.query(CategorySync).filter(
+            CategorySync.odoo_id == category_data.get("parent_id"),
+            CategorySync.instance_id == instance_id
+        ).first() if category_data.get("parent_id") else None
         __logger__.info(
             f"Preparing to export category {category_data['name']} "
             f"(Odoo ID: {category_data.get('id')}) to WooCommerce"
@@ -143,7 +147,9 @@ def category_for_export(
             __logger__.info(
                 f"Category {category_data['name']} exists in WooCommerce (ID: {woocommerce_id})")
             # Update existing category
-            update_data = {"name": category_data["name"]}
+            update_data = {"name": category_data["name"],"slug": slug}
+            if parent:
+                update_data["parent"] = parent.woocommerce_id
 
             # Get current WC category to compare
             if not existing_in_woo:
@@ -174,6 +180,8 @@ def category_for_export(
                 "name": category_data["name"],
                 "slug": slug
             }
+            if parent:
+                category_data_wc["parent"] = parent.woocommerce_id
             __logger__.info(
                 f"Creating category {category_data['name']} in WooCommerce")
             response = wc_request(
