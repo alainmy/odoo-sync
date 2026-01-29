@@ -50,7 +50,7 @@ from app.tasks.attribute_tasks import (
 from app.utils.instance_helpers import get_active_instance_id, get_instance_configs
 from celery.result import AsyncResult
 from celery import group
-
+from app.api.v1.endpoints.odoo import get_odoo_from_active_instance
 router = APIRouter(prefix="/attributes", tags=["attributes"])
 _logger = logging.getLogger(__name__)
 
@@ -572,6 +572,7 @@ async def list_odoo_attributes_with_sync_status(
     ),
     search: Optional[str] = Query(None, description="Search by attribute name"),
     db: Session = Depends(get_db),
+    odoo_client: OdooClient = Depends(get_odoo_from_active_instance),
     current_user: Admin = Depends(get_current_user)
 ):
     """
@@ -585,14 +586,6 @@ async def list_odoo_attributes_with_sync_status(
                 status_code=404,
                 detail="No hay ninguna instancia activa. Por favor activa una instancia."
             )
-
-        # Connect to Odoo
-        odoo_client = OdooClient(
-            url=instance.odoo_url,
-            db=instance.odoo_db,
-            username=instance.odoo_username,
-            password=instance.odoo_password
-        )
 
         # Authenticate with Odoo
         uid = await odoo_client.odoo_authenticate()

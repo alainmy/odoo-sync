@@ -209,11 +209,13 @@ async def batch_sync_categories(
         odoo_response = await odoo.search_read(
             uid,
             "product.category",
-            domain=[["id", "in", request.ids]],
+            # domain=[],
+            # domain=[["id", "in", request.ids]],
             fields=["id", "name", "complete_name", "parent_id"]
         )
-
-        categories = odoo_response.get("result", [])
+        all_categories = odoo_response.get("result", [])
+        categories_filtered = [cat for cat in all_categories if cat["id"] in request.ids]
+        categories = categories_filtered
 
         if not categories:
             raise HTTPException(
@@ -231,7 +233,7 @@ async def batch_sync_categories(
             try:
                 logger.info(f"Queuing category {cat.get('id')}: {cat.get('name')}")
                 task = sync_category_to_woocommerce.apply_async(
-                    args=[cat, categories, instance_id],
+                    args=[cat, all_categories, instance_id],
                     kwargs={
                         "odoo_config": odoo_config,
                         "wc_config": wc_config
