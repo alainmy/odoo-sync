@@ -492,6 +492,8 @@ def sync_product_to_woocommerce(
         wcapi = None
         if wc_config:
             from woocommerce import API
+            logger.info(f"Creating WooCommerce API client...")
+            logger.info(f"WooCommerce config: {wc_config}")
             wcapi = API(
                 url=wc_config["url"],
                 consumer_key=wc_config["consumer_key"],
