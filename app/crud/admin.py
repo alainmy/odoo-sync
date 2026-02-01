@@ -22,8 +22,10 @@ def update_product_sync(db: Session, db_item: ProductSync, item: ProductSyncCrea
     return db_item
 
 
-def get_product_sync_by_odoo_id(db: Session, item_id: int):
-    return db.query(ProductSync).filter(ProductSync.odoo_id == item_id).first()
+def get_product_sync_by_odoo_id(db: Session, item_id: int,
+                                instance_id: int):
+    return db.query(ProductSync).filter(ProductSync.odoo_id == item_id,
+                                        ProductSync.instance_id == instance_id).first()
 
 
 

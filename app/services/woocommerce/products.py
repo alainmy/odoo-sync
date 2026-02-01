@@ -47,10 +47,12 @@ def find_woocommerce_product_by_sku(sku: str, wcapi: API = None) -> Optional[Dic
         if products and len(products) > 0:
             # CRITICAL: Validate exact SKU match
             # WooCommerce search can return fuzzy results
+            __logger__.info(f"Products found for SKU {sku}: {len(products)}")
             found_product = products[0]
-            if found_product.get("sku") == sku:
-                __logger__.info(f"Exact SKU match found: {sku}")
-                return found_product
+            if found_product:
+                if found_product.get("sku") == sku:
+                    __logger__.info(f"Exact SKU match found: {sku}")
+                    return found_product
             else:
                 __logger__.warning(
                     f"SKU mismatch: searched '{sku}', got '{found_product.get('sku')}'. "
@@ -59,7 +61,7 @@ def find_woocommerce_product_by_sku(sku: str, wcapi: API = None) -> Optional[Dic
                 return None
         return None
     except Exception as e:
-        __logger__.error(f"Error searching product by SKU {sku}: {e}")
+        __logger__.info(f"Error searching product by SKU {sku}: {e}")
         return None
 
 
@@ -132,6 +134,8 @@ def create_or_update_woocommerce_product(
     Returns:
         ProductSyncResult with sync operation details
     """
+    
+    __logger__.info(f"CREDENTIALS WC API: {wcapi.url}, {wcapi.consumer_key}, {wcapi.consumer_secret}")
     result = ProductSyncResult(
         odoo_id=odoo_product.id,
         odoo_sku=odoo_product.default_code,
@@ -162,7 +166,7 @@ def create_or_update_woocommerce_product(
         
         # First search in sync table (faster)
         sync_repo = ProductSyncRepository(db) if db else None
-        sync_product = get_product_sync_by_odoo_id(db, odoo_product.id)
+        sync_product = get_product_sync_by_odoo_id(db, odoo_product.id, instance_id) if db else None
         wc_product_id = None
         __logger__.info(
             f"Syncing Odoo for {odoo_product.id}: {sync_product})"
@@ -170,7 +174,7 @@ def create_or_update_woocommerce_product(
         if sync_product:
             # Already synced, use ID directly
             __logger__.info(
-                f"Product seraching. WooCommerce ID: {sync_product.woocommerce_id}"
+                f"Product searching. WooCommerce ID: {sync_product.woocommerce_id}"
             )
             existing_product = find_woocommerce_product_by_id(
                 sync_product.woocommerce_id, wcapi=wcapi
@@ -188,12 +192,13 @@ def create_or_update_woocommerce_product(
             existing_product = find_woocommerce_product_by_sku(
                 odoo_product.default_code, wcapi=wcapi
             )
+            __logger__.info(f"EXISTING PRODUCT IN WOOCOMMERCE OBJECT: {existing_product}")
             if existing_product:
                 __logger__.info(
-                    f"Found existing WooCommerce product by SKU: {existing_product['name']}"
+                    f"FOUND EXISTING: {existing_product['name']}"
                 )
                 wc_product_id = existing_product["id"]
-        elif hasattr(odoo_product, 'slug') and odoo_product.slug:
+        elif odoo_product.slug:
             # Search by slug is DISABLED - it's broken and returns same product for all slugs
             # This was causing multiple Odoo products to sync to the same WooCommerce ID
             __logger__.info(
@@ -204,16 +209,16 @@ def create_or_update_woocommerce_product(
             )
             if existing_product:
                 __logger__.info(
-                    f"Found existing WooCommerce product by slug: {existing_product['name']}"
+                    f"FOUND EXISTING: {existing_product['name']}"
                 )
                 wc_product_id = existing_product["id"]
         # Convert Pydantic model to dict for API
-        product_data = wc_product_data.dict(exclude_none=True)
+        product_data = wc_product_data.model_dump(exclude_none=True)
         __logger__.info(f"SLUG: {odoo_product.slug}")
         __logger__.info(f"sku: {odoo_product.default_code}")
         __logger__.info(
             f"Categories in product_data: {product_data.get('categories')}")
-
+        __logger__.info(f"WC_Product_ID: {wc_product_id}")
         if wc_product_id:
             # CONFLICT VALIDATION: Check if this WooCommerce ID is already assigned to another Odoo product
             if sync_repo:
