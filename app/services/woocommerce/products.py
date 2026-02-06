@@ -20,10 +20,12 @@ __logger__ = logging.getLogger(__name__)
 
 # Initialize Redis client for distributed locks
 try:
-    redis_client = redis.Redis.from_url(settings.celery_broker_url, decode_responses=True)
+    redis_client = redis.Redis.from_url(
+        settings.celery_broker_url, decode_responses=True)
     __logger__.info("Redis client initialized for distributed locks")
 except Exception as e:
-    __logger__.warning(f"Failed to initialize Redis client: {e}. Locks will be disabled.")
+    __logger__.warning(
+        f"Failed to initialize Redis client: {e}. Locks will be disabled.")
     redis_client = None
 
 
@@ -134,8 +136,9 @@ def create_or_update_woocommerce_product(
     Returns:
         ProductSyncResult with sync operation details
     """
-    
-    __logger__.info(f"CREDENTIALS WC API: {wcapi.url}, {wcapi.consumer_key}, {wcapi.consumer_secret}")
+
+    __logger__.info(
+        f"CREDENTIALS WC API: {wcapi.url}, {wcapi.consumer_key}, {wcapi.consumer_secret}")
     result = ProductSyncResult(
         odoo_id=odoo_product.id,
         odoo_sku=odoo_product.default_code,
@@ -148,11 +151,12 @@ def create_or_update_woocommerce_product(
     lock_key = f"product_sync:{odoo_product.id}:{instance_id}"
     lock_timeout = 300  # 5 minutes max lock time
     lock = None
-    
+
     try:
         # Acquire distributed lock if Redis is available
         if redis_client:
-            lock = RedisLock(redis_client, lock_key, timeout=lock_timeout, blocking_timeout=10)
+            lock = RedisLock(redis_client, lock_key,
+                             timeout=lock_timeout, blocking_timeout=10)
             acquired = lock.acquire(blocking=True)
             if not acquired:
                 __logger__.warning(
@@ -163,10 +167,11 @@ def create_or_update_woocommerce_product(
                 result.message = "Another worker is syncing this product"
                 return result
             __logger__.info(f"Acquired lock for product {odoo_product.id}")
-        
+
         # First search in sync table (faster)
         sync_repo = ProductSyncRepository(db) if db else None
-        sync_product = get_product_sync_by_odoo_id(db, odoo_product.id, instance_id) if db else None
+        sync_product = get_product_sync_by_odoo_id(
+            db, odoo_product.id, instance_id) if db else None
         wc_product_id = None
         __logger__.info(
             f"Syncing Odoo for {odoo_product.id}: {sync_product})"
@@ -192,7 +197,8 @@ def create_or_update_woocommerce_product(
             existing_product = find_woocommerce_product_by_sku(
                 odoo_product.default_code, wcapi=wcapi
             )
-            __logger__.info(f"EXISTING PRODUCT IN WOOCOMMERCE OBJECT: {existing_product}")
+            __logger__.info(
+                f"EXISTING PRODUCT IN WOOCOMMERCE OBJECT: {existing_product}")
             if existing_product:
                 __logger__.info(
                     f"FOUND EXISTING: {existing_product['name']}"
@@ -222,7 +228,8 @@ def create_or_update_woocommerce_product(
         if wc_product_id:
             # CONFLICT VALIDATION: Check if this WooCommerce ID is already assigned to another Odoo product
             if sync_repo:
-                existing_mapping = sync_repo.get_product_sync_by_wc_id(wc_product_id, instance_id)
+                existing_mapping = sync_repo.get_product_sync_by_wc_id(
+                    wc_product_id, instance_id)
                 if existing_mapping and existing_mapping.odoo_id != odoo_product.id:
                     __logger__.error(
                         f"CONFLICT: WooCommerce ID {wc_product_id} already mapped to Odoo product "
@@ -235,7 +242,7 @@ def create_or_update_woocommerce_product(
                         f"different Odoo product (ID: {existing_mapping.odoo_id})"
                     )
                     return result
-            
+
             # Product exists in WooCommerce
             result.woocommerce_id = wc_product_id
 
@@ -243,12 +250,21 @@ def create_or_update_woocommerce_product(
                 # Update existing product
                 __logger__.info(
                     f"Updating WooCommerce product ID: {wc_product_id}: Odoo ID {odoo_product.id}")
-                updated_product = wc_request(
-                    "PUT",
-                    f"products/{wc_product_id}",
-                    params=product_data,
-                    wcapi=wcapi
-                )
+                updated_product = None
+                try:
+                    updated_product = wc_request(
+                        "PUT",
+                        f"products/{wc_product_id}",
+                        params=product_data,
+                        wcapi=wcapi
+                    )
+                except Exception as e:
+                    __logger__.error(f"Error updating WooCommerce product: {e}")
+                    result.success = False
+                    result.action = "error"
+                    result.message = f"Error updating WooCommerce product: {e}"
+                    result.error_details = str(e)
+                    return result
                 __logger__.info(
                     f"WooCommerce product updated: {updated_product['name']}")
                 result.success = True
@@ -290,58 +306,68 @@ def create_or_update_woocommerce_product(
             # Product doesn't exist
             if create_if_not_exists:
                 # Create new product
-                new_product = wc_request(
-                    "POST", "products", params=product_data, wcapi=wcapi
-                )
-                
-                # CONFLICT VALIDATION: Check if newly created WC ID conflicts with existing mapping
-                if sync_repo and new_product.get("id"):
-                    existing_mapping = sync_repo.get_product_sync_by_wc_id(new_product["id"], instance_id)
-                    if existing_mapping and existing_mapping.odoo_id != odoo_product.id:
-                        __logger__.error(
-                            f"CONFLICT AFTER CREATE: WooCommerce ID {new_product['id']} already mapped to "
-                            f"Odoo product {existing_mapping.odoo_id}. New product created but cannot sync."
-                        )
-                        result.success = False
-                        result.action = "error"
-                        result.message = (
-                            f"WooCommerce product {new_product['id']} already synced to "
-                            f"different Odoo product (ID: {existing_mapping.odoo_id})"
-                        )
-                        return result
-                
-                result.success = True
-                result.action = "created"
-                result.message = f"Product created: {new_product['name']}"
-                result.woocommerce_id = new_product["id"]
-
-                # Update sync timestamps
-                if db:
-                    odoo_write_date = None
-                    if hasattr(odoo_product, 'write_date') and odoo_product.write_date:
-                        try:
-                            odoo_write_date = datetime.fromisoformat(
-                                str(odoo_product.write_date).replace(" ", "T")
-                            )
-                        except:
-                            pass
-                    __logger__.info(
-                        f"Updating sync timestamps for created product ID {new_product['id']}")
-                    sync_repo.update_product_sync_timestamps(
-                        odoo_id=odoo_product.id,
-                        instance_id=instance_id,
-                        odoo_name=odoo_product.name,
-                        wc_id=new_product["id"],
-                        odoo_write_date=odoo_write_date,
-                        last_synced_at=datetime.now(),
-                        published=new_product.get("status") == "publish",
-                        needs_sync=False,
-                        created=True,
-                        message=result.message
+                try:
+                    new_product = wc_request(
+                        "POST", "products", params=product_data, wcapi=wcapi
                     )
-                else:
-                    __logger__.info(
-                        "No DB session provided, skipping sync timestamp update.")
+                    # CONFLICT VALIDATION: Check if newly created WC ID conflicts with existing mapping
+                    if sync_repo and new_product.get("id"):
+                        existing_mapping = sync_repo.get_product_sync_by_wc_id(
+                            new_product["id"], instance_id)
+                        if existing_mapping and existing_mapping.odoo_id != odoo_product.id:
+                            __logger__.error(
+                                f"CONFLICT AFTER CREATE: WooCommerce ID {new_product['id']} already mapped to "
+                                f"Odoo product {existing_mapping.odoo_id}. New product created but cannot sync."
+                            )
+                            result.success = False
+                            result.action = "error"
+                            result.message = (
+                                f"WooCommerce product {new_product['id']} already synced to "
+                                f"different Odoo product (ID: {existing_mapping.odoo_id})"
+                            )
+                            return result
+
+                    result.success = True
+                    result.action = "created"
+                    result.message = f"Product created: {new_product['name']}"
+                    result.woocommerce_id = new_product["id"]
+
+                    # Update sync timestamps
+                    if db:
+                        odoo_write_date = None
+                        if hasattr(odoo_product, 'write_date') and odoo_product.write_date:
+                            try:
+                                odoo_write_date = datetime.fromisoformat(
+                                    str(odoo_product.write_date).replace(
+                                        " ", "T")
+                                )
+                            except:
+                                pass
+                        __logger__.info(
+                            f"Updating sync timestamps for created product ID {new_product['id']}")
+                        sync_repo.update_product_sync_timestamps(
+                            odoo_id=odoo_product.id,
+                            instance_id=instance_id,
+                            odoo_name=odoo_product.name,
+                            wc_id=new_product["id"],
+                            odoo_write_date=odoo_write_date,
+                            last_synced_at=datetime.now(),
+                            published=new_product.get("status") == "publish",
+                            needs_sync=False,
+                            created=True,
+                            message=result.message
+                        )
+                    else:
+                        __logger__.info(
+                            "No DB session provided, skipping sync timestamp update.")
+                except Exception as e:
+                    __logger__.error(f"Error creating product: {str(e)}")
+                    result.success = False
+                    result.action = "error"
+                    result.message = f"Error creating product: {str(e)}"
+                    result.error_details = str(e)
+                    return result
+
             else:
                 result.success = True
                 result.action = "skipped"
@@ -355,7 +381,8 @@ def create_or_update_woocommerce_product(
         result.action = "error"
         result.message = "Database constraint error: WooCommerce ID already assigned to another product"
         result.error_details = str(e)
-        __logger__.error(f"IntegrityError syncing product {odoo_product.id}: {e}")
+        __logger__.error(
+            f"IntegrityError syncing product {odoo_product.id}: {e}")
     except HTTPException as e:
         result.success = False
         result.action = "error"

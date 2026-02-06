@@ -180,3 +180,37 @@ class OdooClient:
             return result  # Devuelve el ID del nuevo registro
         else:
             raise Exception(f"Odoo create error: {result}")
+
+    async def search_count(self, uid, model, domain):
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "call",
+            "params": {
+                "service": "object",
+                "method": "execute_kw",
+                "args": [
+                    self.db,
+                    uid,
+                    self.password,
+                    model,
+                    "search_count",
+                    [domain],
+                    {"context": self.context}
+                ],
+            },
+            "id": 2
+        }
+        headers = {"Cookie": f"session_id={1}"}
+        try:
+            response = requests.post(f"{self.url}/jsonrpc",
+                                     json=payload, headers=headers)
+            result = response.json()
+            if result.get("error"):
+                logger.error(f"Odoo search_count error: {result['error']}")
+                raise HTTPException(status_code=500,
+                                    detail=str(result["error"]))
+            logger.info(f"Odoo search_count response: {result}")
+            return result
+        except Exception as e:
+            logger.error(f"Error in search_count: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))

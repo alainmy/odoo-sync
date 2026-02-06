@@ -182,7 +182,7 @@ def sync_all_product_prices_task(
             f"{results['successful']} successful, {results['failed']} failed"
         )
         
-        return results.model_dump()
+        return results
             
     except Exception as e:
         logger.error(f"Error in bulk price sync task for instance {instance_id}: {e}")

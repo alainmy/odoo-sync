@@ -108,7 +108,9 @@ async def list_odoo_categories_with_sync_status(
     try:
         # Authenticate with Odoo
         uid = await odoo.odoo_authenticate()
-
+        if not uid:
+            raise HTTPException(
+                status_code=400, detail="Failed to authenticate with Odoo")
         # Build Odoo domain for filtering
         domain = []
         if search:
@@ -118,13 +120,24 @@ async def list_odoo_categories_with_sync_status(
             f"Fetching categories from Odoo: domain={domain}, limit={limit}")
 
         # Fetch from Odoo
+        page = max(int(offset or 1), 1)
+        limit = max(int(limit or 20), 1)
+
+        odoo_offset = (page - 1) * limit
+
+        search_count = await odoo.search_count(
+            uid,
+            "product.category",
+            domain=[]
+        )
+        ctaegories_count = search_count["result"]
         odoo_response = await odoo.search_read(
             uid,
             "product.category",
             domain=domain if domain else [],
             fields=["id", "name", "complete_name", "parent_id"],
             limit=limit,
-            offset=offset
+            offset=odoo_offset
         )
 
         odoo_categories = odoo_response.get("result", [])
@@ -169,7 +182,7 @@ async def list_odoo_categories_with_sync_status(
             f"Returning {len(enriched_categories)} categories after filtering")
 
         return CategoryListResponse(
-            total_count=len(enriched_categories),
+            total_count=ctaegories_count,
             categories=[CategorySyncStatusResponse(
                 **c) for c in enriched_categories],
             filters_applied={
@@ -204,7 +217,9 @@ async def batch_sync_categories(
 
         # Authenticate with Odoo
         uid = await odoo.odoo_authenticate()
-
+        if not uid:
+            raise HTTPException(
+                status_code=400, detail="Failed to authenticate with Odoo")
         # Fetch category data from Odoo
         odoo_response = await odoo.search_read(
             uid,
@@ -214,7 +229,8 @@ async def batch_sync_categories(
             fields=["id", "name", "complete_name", "parent_id"]
         )
         all_categories = odoo_response.get("result", [])
-        categories_filtered = [cat for cat in all_categories if cat["id"] in request.ids]
+        categories_filtered = [
+            cat for cat in all_categories if cat["id"] in request.ids]
         categories = categories_filtered
 
         if not categories:
@@ -225,13 +241,15 @@ async def batch_sync_categories(
 
         logger.info(f"Starting batch sync for {len(categories)} categories")
         logger.info(f"Instance ID: {instance_id}")
-        logger.info(f"Categories to sync: {[cat.get('id') for cat in categories]}")
+        logger.info(
+            f"Categories to sync: {[cat.get('id') for cat in categories]}")
 
         # Queue tasks individually with explicit queue
         task_ids = []
         for cat in categories:
             try:
-                logger.info(f"Queuing category {cat.get('id')}: {cat.get('name')}")
+                logger.info(
+                    f"Queuing category {cat.get('id')}: {cat.get('name')}")
                 task = sync_category_to_woocommerce.apply_async(
                     args=[cat, all_categories, instance_id],
                     kwargs={
@@ -241,9 +259,11 @@ async def batch_sync_categories(
                     queue="sync_queue"
                 )
                 task_ids.append(str(task.id))
-                logger.info(f"Category {cat.get('id')} queued with task_id: {task.id}")
+                logger.info(
+                    f"Category {cat.get('id')} queued with task_id: {task.id}")
             except Exception as e:
-                logger.error(f"Error queuing category {cat.get('id')}: {e}", exc_info=True)
+                logger.error(
+                    f"Error queuing category {cat.get('id')}: {e}", exc_info=True)
 
         logger.info(f"Successfully queued {len(task_ids)} categories for sync")
 
@@ -306,7 +326,9 @@ async def list_odoo_tags_with_sync_status(
     try:
         # Authenticate with Odoo
         uid = await odoo.odoo_authenticate()
-
+        if not uid:
+            raise HTTPException(
+                status_code=400, detail="Failed to authenticate with Odoo")
         # Build Odoo domain for filtering
         domain = []
         if search:
@@ -397,7 +419,9 @@ async def batch_sync_tags(
 
         # Authenticate with Odoo
         uid = await odoo.odoo_authenticate()
-
+        if not uid:
+            raise HTTPException(
+                status_code=400, detail="Failed to authenticate with Odoo")
         # Fetch tag data from Odoo
         odoo_response = await odoo.search_read(
             uid,
@@ -432,9 +456,11 @@ async def batch_sync_tags(
                     queue="sync_queue"
                 )
                 task_ids.append(str(task.id))
-                logger.info(f"Tag {tag.get('id')} queued with task_id: {task.id}")
+                logger.info(
+                    f"Tag {tag.get('id')} queued with task_id: {task.id}")
             except Exception as e:
-                logger.error(f"Error queuing tag {tag.get('id')}: {e}", exc_info=True)
+                logger.error(
+                    f"Error queuing tag {tag.get('id')}: {e}", exc_info=True)
 
         logger.info(f"Successfully queued {len(task_ids)} tags for sync")
 
@@ -474,4 +500,3 @@ async def get_tag_sync_statistics(
     except Exception as e:
         logger.error(f"Error getting tag statistics: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
-

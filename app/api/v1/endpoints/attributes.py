@@ -592,7 +592,7 @@ async def list_odoo_attributes_with_sync_status(
         if not uid:
             raise HTTPException(
                 status_code=401,
-                detail="No se pudo autenticar con Odoo"
+                detail="Failed to authenticate with Odoo"
             )
 
         # Build Odoo domain for filtering
@@ -733,7 +733,7 @@ async def batch_sync_attributes(
         if not uid:
             raise HTTPException(
                 status_code=401,
-                detail="No se pudo autenticar con Odoo"
+                detail="Failed to authenticate with Odoo"
             )
 
         # Fetch attribute data from Odoo
@@ -826,7 +826,7 @@ async def get_attribute_sync_statistics(
         if not uid:
             raise HTTPException(
                 status_code=401,
-                detail="No se pudo autenticar con Odoo"
+                detail="Failed to authenticate with Odoo"
             )
 
         # Get total count from Odoo using search (returns only IDs)

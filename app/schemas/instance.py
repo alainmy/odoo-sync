@@ -2,6 +2,8 @@ from pydantic import BaseModel, HttpUrl
 from typing import Optional
 from datetime import datetime
 
+from app.schemas import language
+
 
 class WooCommerceInstanceBase(BaseModel):
     name: str
@@ -13,6 +15,7 @@ class WooCommerceInstanceBase(BaseModel):
     odoo_username: str
     odoo_password: str
     is_active: bool = False
+    odoo_language: Optional[str] = "en_US"
 
 
 class WooCommerceInstanceCreate(WooCommerceInstanceBase):
@@ -29,6 +32,7 @@ class WooCommerceInstanceUpdate(BaseModel):
     odoo_username: Optional[str] = None
     odoo_password: Optional[str] = None
     is_active: Optional[bool] = None
+    odoo_language: Optional[str] = None
 
 
 class WooCommerceInstance(WooCommerceInstanceBase):
