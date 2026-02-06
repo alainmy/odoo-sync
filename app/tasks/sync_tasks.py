@@ -440,9 +440,9 @@ def sync_product_to_woocommerce(
             product_image = download_and_save_image(
                 f"{odoo_config['url']}/web/image/product.template/{odoo_product_data['id']}/image_1920")
             image_urls.append(product_image)
-            normalized_data["image_urls"] = [image_urls]
+            normalized_data["image_urls"] = image_urls
         else:
-            normalized_data["image_urls"] = []
+            normalized_data["image_urls"] = image_urls
         for key, value in odoo_product_data.items():
             if value is False:
                 normalized_data[key] = None
