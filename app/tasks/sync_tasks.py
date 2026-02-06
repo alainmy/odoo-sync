@@ -443,6 +443,7 @@ def sync_product_to_woocommerce(
             normalized_data["image_urls"] = image_urls
         else:
             normalized_data["image_urls"] = image_urls
+        logger.info(f"IMAGES URLS: {normalized_data['image_urls']}")
         for key, value in odoo_product_data.items():
             if value is False:
                 normalized_data[key] = None
@@ -528,7 +529,7 @@ def sync_product_to_woocommerce(
                     normalized_data[key] = value
             else:
                 normalized_data[key] = value
-
+        logger.info(f"IMAGES URLS: {normalized_data['image_urls']}")
         # Generate globally unique slug: name + odoo_id + instance_id
         # This prevents slug conflicts across multiple instances
         base_slug = normalized_data["name"].replace(" ", "-").lower()
