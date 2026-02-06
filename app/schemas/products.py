@@ -84,3 +84,47 @@ class ProductBase(BaseModel):
             volume=odoo_product["volume"],
             volume_uom_name=odoo_product["volume_uom_name"],
         )
+
+
+class ProductPriceList(BaseModel):
+    name: Optional[str] = None
+    active: Optional[bool] = None
+    currency_id: Optional[list] = None
+    item_ids: Optional[list] = None
+
+    @classmethod
+    def from_odoo(cls, odoo_price_list_item):
+        return cls(
+            name=odoo_price_list_item["name"] or None,
+            active=odoo_price_list_item["active"] or None,
+            currency_id=odoo_price_list_item["currency_id"] or None,
+            item_ids=odoo_price_list_item["item_ids"] or None,
+        )
+
+class ProductPriceListItem(BaseModel):
+    
+    name: Optional[str] = None
+    price: Optional[float] = None
+    pricelist_id: Optional[list] = None
+    product_id: Optional[list] = None
+    product_tmpl_id: Optional[list] = None
+    compute_price: Optional[str] = None
+    fixed_price: Optional[float] = None
+    percent_price: Optional[float] = None
+    min_quantity: Optional[float] = None
+    product_uom: Optional[list] = None
+
+    @classmethod
+    def from_odoo(cls, odoo_price_list_item):
+        return cls(
+            name=odoo_price_list_item["name"] or None,
+            price=odoo_price_list_item["price"] or None,
+            product_tmpl_id=odoo_price_list_item["product_tmpl_id"] or None,
+            pricelist_id=odoo_price_list_item["pricelist_id"] or None,
+            product_uom=odoo_price_list_item["product_uom"] or None,
+            product_id=odoo_price_list_item["product_id"] or None,
+            compute_price=odoo_price_list_item["compute_price"] or None,
+            fixed_price=odoo_price_list_item["fixed_price"] or None,
+            percent_price=odoo_price_list_item["percent_price"] or None,
+            min_quantity=odoo_price_list_item["min_quantity"] or None,
+        )

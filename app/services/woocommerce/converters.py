@@ -14,13 +14,23 @@ from app.services.woocommerce.tags import manage_tags_for_export
 __logger__ = logging.getLogger(__name__)
 
 
+def _get_image_url(base_url, model_name, record_id, field_name, write_date=0, width=0, height=0):
+    """ Returns a local url that points to the image field of a given browse record. """
+    if base_url and not base_url.endswith("/"):
+        base_url = base_url+"/"
+    if width or height:
+        return '%sweb/image/%s/%s/%s/%sx%s?unique=%s' % (base_url, model_name, record_id, field_name, width, height, fields.Datetime.to_string(write_date))
+    else:
+        return '%sweb/image/%s/%s/%s?unique=%s' % (base_url, model_name, record_id, field_name, fields.Datetime.to_string(write_date))
+
+
 def woocommerce_type_to_odoo_type(wc_type: str) -> str:
     """
     Convert WooCommerce product type to Odoo product type.
-    
+
     Args:
         wc_type: WooCommerce product type
-        
+
     Returns:
         Odoo product type string
     """
@@ -44,7 +54,7 @@ def odoo_product_to_woocommerce(
 ) -> WooCommerceProductCreate:
     """
     Convert an Odoo product to WooCommerce format.
-    
+
     Args:
         odoo_product: Odoo product object
         default_status: Default product status (publish/draft)
@@ -53,7 +63,7 @@ def odoo_product_to_woocommerce(
         instance_id: WooCommerce instance ID for multi-tenancy
         is_variable: True if product has variants
         product_attributes: Attributes for variable products
-        
+
     Returns:
         WooCommerceProductCreate object ready for WooCommerce API
     """

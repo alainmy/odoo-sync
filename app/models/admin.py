@@ -197,3 +197,6 @@ class WooCommerceInstance(Base):
     
     # Relationships
     webhooks = relationship("WebhookConfig", back_populates="instance", cascade="all, delete-orphan")
+
+    # Odoo language setting
+    odoo_language = Column(String(10), default="en_US")

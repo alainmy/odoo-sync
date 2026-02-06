@@ -1,10 +1,14 @@
 """
 Celery tasks for synchronization operations between WooCommerce and Odoo.
 """
+from dotenv import load_dotenv
+from uuid import uuid4
 import logging
 import asyncio
+import os
 from typing import Dict, Any, List, Optional, Tuple
 from celery import Task
+import requests
 from sqlalchemy.orm import Session
 from app.celery_app import celery_app
 from app.core.config import settings
@@ -30,6 +34,11 @@ from app.tasks.sync_helpers import create_wc_api_client
 from app.services.woocommerce import manage_category_for_export, \
     get_wc_api_from_instance_config, build_category_chain, category_for_export
 from app.models.admin import CategorySync
+load_dotenv(override=True)
+IMAGE_DIR = os.getenv("IMAGE_DIR", "app/images/products")
+FAST_API_HOST = os.getenv("FAST_API_HOST", "http://localhost:8000")
+os.makedirs(IMAGE_DIR, exist_ok=True)
+
 logger = logging.getLogger(__name__)
 
 
@@ -342,6 +351,37 @@ def sync_product_to_odoo(self, product_data: Dict[str, Any], instance_id: int) -
         raise self.retry(exc=exc, countdown=2 ** self.request.retries)
 
 
+ALLOWED_MIME = ("image/jpeg", "image/png", "image/webp")
+
+
+async def download_and_save_image(url: str) -> dict:
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "image/*",
+    }
+
+    with requests.get(url, headers=headers, stream=True, timeout=60, cookies={"session_id": "abc123"}) as r:
+        r.raise_for_status()
+        content_type = r.headers.get("Content-Type", "")
+        if content_type not in ALLOWED_MIME:
+            raise ValueError(f"MIME inválido: {content_type}")
+
+        extension = {
+            "image/jpeg": "jpg",
+            "image/png": "png",
+            "image/webp": "webp",
+        }[content_type]
+
+        filename = f"{uuid4().hex}.{extension}"
+        file_path = os.path.join(IMAGE_DIR, filename)
+        with open(file_path, "wb") as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+
+    return f"{FAST_API_HOST}/images/products/{filename}"
+
+
 @celery_app.task(
     bind=True,
     base=DatabaseTask,
@@ -395,6 +435,14 @@ def sync_product_to_woocommerce(
         # Normalize Odoo data (False -> None, many2one lists -> int)
         normalized_data = {}
         # logger.info(f"Normalizing Odoo product data: {odoo_product_data}")
+        image_urls = []
+        if 'image_1920' in odoo_product_data and odoo_product_data['image_1920']:
+            product_image = download_and_save_image(
+                f"{odoo_config['url']}/web/image/product.template/{odoo_product_data['id']}/image_1920")
+            image_urls.append(product_image)
+            normalized_data["image_urls"] = [image_urls]
+        else:
+            normalized_data["image_urls"] = []
         for key, value in odoo_product_data.items():
             if value is False:
                 normalized_data[key] = None
@@ -467,6 +515,15 @@ def sync_product_to_woocommerce(
                 elif len(value) == 2 and isinstance(value[0], int):
                     # Other many2one fields [id, name] -> extract id only
                     normalized_data[key] = value[0]
+                elif key == 'product_template_image_ids':
+
+                    for img in value:
+                        image = download_and_save_image(
+                            f"{odoo_config['url']}/web/image/product.image/{img}/image_1920")
+                        normalized_data["image_urls"].append(image)
+                    # Special case for image URLs
+                    logger.info(f"Processing image_urls field: {value}")
+
                 else:
                     normalized_data[key] = value
             else:
@@ -558,6 +615,10 @@ def sync_product_to_woocommerce(
                     }
                 }
 
+            # Upload Images if needed
+            if odoo_product.image_urls:
+                logger.info(
+                    f"Product {odoo_product.id} has {len(odoo_product.image_urls)} images to sync")
             # Attributes valid - prepare for variable product
             is_variable = True
             product_attributes = build_wc_attributes_for_product(
@@ -984,7 +1045,7 @@ def sync_category_to_woocommerce(
         # Usar chain() de celery.canvas para crear la cadena
         from celery import chain
         task_chain = chain(*signatures)
-        
+
         # Ejecutar la cadena
         chain_result = task_chain.apply_async()
 

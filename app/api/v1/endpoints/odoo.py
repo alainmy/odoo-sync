@@ -1,10 +1,11 @@
 from ast import Param
 from datetime import datetime, date
-from email import message
-from http import client
+from itertools import product
 import time
+
+from celery import result
 from app.session import create_session, get_session
-from app.schemas.products import OdooProductSchema, ProductBase
+from app.schemas.products import OdooProductSchema, ProductBase, ProductPriceListItem
 from app.schemas.categories import CategoryBase, CategorySyncRequest, CategorySyncResponse
 from app.crud.odoo import OdooClient
 import json
@@ -22,6 +23,8 @@ from app.auth.oauth2 import get_current_user
 from app.models.admin import Admin
 from app.db.session import get_db
 from sqlalchemy.orm import Session
+
+from app.schemas.language import OdooLanguageSchema
 dotenv.load_dotenv()
 
 
@@ -34,7 +37,7 @@ async def api_session_header(api_session: str = Header(..., description="Token d
     return api_session
 
 router = APIRouter(
-    dependencies=[Depends(api_session_header)]
+    # dependencies=[Depends(api_session_header)]
 )
 
 ODOO_URL = "http://host.docker.internal:8069"
@@ -54,7 +57,7 @@ default_context = {
 async def get_session_id(request: Request):
     api_session = request.headers.get(
         "api-session") or request.headers.get("api_session") or "default-session"
-    
+
     session = await get_session(api_session)
     if session:
         session_data = json.loads(session)
@@ -105,23 +108,24 @@ async def get_odoo_from_active_instance(
             status_code=404,
             detail="No hay ninguna instancia activa configurada. Por favor activa una instancia primero."
         )
-    
+
     # Obtener sesión si existe
-    api_session = request.headers.get("api-session") or request.headers.get("api_session") or "default-session"
+    api_session = request.headers.get(
+        "api-session") or request.headers.get("api_session") or "default-session"
     session = await get_session(api_session)
-    
+
     context = default_context.copy()
     context.update({
-        "lang": request.headers.get("lang", "en_US"),
+        "lang": request.headers.get("lang", instance.odoo_language or "en_US"),
         "tz": request.headers.get("tz", "America/Havana"),
         "website_id": request.headers.get("website_id", 1),
     })
-    
+
     if session:
         session_data = json.loads(session)
         if "context" in session_data:
             context.update(session_data["context"])
-    
+
     # Crear cliente con configuraciones de la instancia activa
     odoo = OdooClient(
         url=instance.odoo_url,
@@ -130,8 +134,51 @@ async def get_odoo_from_active_instance(
         password=instance.odoo_password,
         context=context
     )
-    
+
     return odoo
+
+
+@router.get("/active-languages", summary="Consultar idiomas activos en Odoo",
+            response_model=List[OdooLanguageSchema])
+async def get_active_languages(
+        request: Request,
+        odoo: OdooClient = Depends(get_odoo_from_active_instance),
+        db: Session = Depends(get_db),
+        current_user: Admin = Depends(get_current_user)):
+
+    try:
+        uid = await odoo.odoo_authenticate()
+        if not uid:
+            raise HTTPException(
+                status_code=400, detail="Failed to authenticate with Odoo")
+
+        # Consultar idiomas activos desde Odoo
+        languages = await odoo.search_read(
+            uid,
+            "res.lang",
+            domain=[["active", "=", True]],
+            fields=["name", "code", "iso_code", "active"],
+            limit=100,
+            offset=0
+        )
+
+        if languages.get("error"):
+            error_msg = languages["error"].get("message", "Error desconocido")
+            _logger.error(f"Error consultando idiomas Odoo: {error_msg}")
+            raise HTTPException(
+                status_code=400,
+                detail=error_msg)
+
+        # Extraer códigos de idioma
+        language_codes = [
+            OdooLanguageSchema.from_odoo(lang)
+            for lang in languages["result"]
+        ] if languages.get("result") else []
+
+        _logger.info(f"Idiomas activos obtenidos de Odoo: {language_codes}")
+        return language_codes
+    except HTTPException as e:
+        raise e
 
 
 @router.get("/odoo/products", summary="Consultar productos en Odoo",
@@ -212,6 +259,59 @@ async def get_odoo_product(
             raise HTTPException(
                 status_code=400, detail=product["error"]["message"])
         return ProductBase.from_odoo(product["result"][0])
+    except HTTPException as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/products/{product_id}/prices_list_item", summary="Consultar lista de precios de un producto en Odoo",
+            response_model=list[ProductPriceListItem])
+async def get_odoo_product_price_list_item(
+    request: Request,
+    product_id: int,
+    odoo: str = Depends(get_session_id),
+    db: Session = Depends(get_db),
+    current_user: Admin = Depends(get_current_user)
+):
+    try:
+        uid = await odoo.odoo_authenticate()
+        if not uid:
+            raise HTTPException(
+                status_code=401, detail="Invalid Credentials")
+
+        product = await odoo.search_read(uid, "product.template",
+                                         domain=[["id", "=", product_id]],
+                                         fields=["id", "name",
+                                                 "product_variant_ids"],
+                                         limit=1)
+        if product.get("error"):
+            raise HTTPException(
+                status_code=400, detail=product["error"]["message"])
+        product_data = product["result"][0]['product_variant_ids']
+        domain = [
+            ["product_tmpl_id", "=", product_id],
+            ["product_id", "in", product_data],
+            ["compute_price", "=", "fixed"]
+        ]
+        fields = [
+            "id",
+            "name",
+            "price",
+            "pricelist_id",
+            "product_id",
+            "product_tmpl_id",
+            "product_uom"
+        ]
+        price_list_items = await odoo.search_read(uid, "product.pricelist.item",
+                                                  domain=domain,
+                                                  fields=fields,
+                                                  limit=100)
+        if price_list_items.get("error"):
+            raise HTTPException(
+                status_code=400, detail=price_list_items["error"]["message"])
+        result = price_list_items.get("result", [])
+        return [ProductPriceListItem.from_odoo(price_list_item) for price_list_item in result] if result else []
     except HTTPException as e:
         raise HTTPException(status_code=e.status_code, detail=e.detail)
     except Exception as e:
@@ -308,8 +408,8 @@ async def sync_product_to_odoo(request: Request):
         # Log for debugging
         _logger.info("=== WEBHOOK RECEIVED ===")
         _logger.info("Topic: %s, Event: %s",
-                    webhook_headers["x_wc_webhook_topic"],
-                    webhook_headers["x_wc_webhook_event"])
+                     webhook_headers["x_wc_webhook_topic"],
+                     webhook_headers["x_wc_webhook_event"])
         _logger.info("Product ID: %s", webhook_payload.get("id"))
 
         # Validate webhook signature (ENABLED for production security)
@@ -318,10 +418,13 @@ async def sync_product_to_odoo(request: Request):
             from app.tasks.webhook_tasks import validate_webhook_signature
             body = await request.body()
             if not validate_webhook_signature(body, signature, settings.wc_webhook_secret):
-                _logger.warning(f"Invalid webhook signature for event {webhook_headers.get('x_wc_webhook_delivery_id')}")
-                raise HTTPException(status_code=401, detail="Invalid webhook signature")
+                _logger.warning(
+                    f"Invalid webhook signature for event {webhook_headers.get('x_wc_webhook_delivery_id')}")
+                raise HTTPException(
+                    status_code=401, detail="Invalid webhook signature")
         else:
-            _logger.warning(f"No webhook signature provided for event {webhook_headers.get('x_wc_webhook_delivery_id')}")
+            _logger.warning(
+                f"No webhook signature provided for event {webhook_headers.get('x_wc_webhook_delivery_id')}")
 
         # Build event type
         topic = webhook_headers.get("x_wc_webhook_topic", "unknown")
@@ -330,7 +433,7 @@ async def sync_product_to_odoo(request: Request):
 
         # Generate unique event ID
         webhook_id = webhook_headers.get("x_wc_webhook_delivery_id") or \
-                     f"{event_type}_{webhook_payload.get('id')}_{int(time.time())}"
+            f"{event_type}_{webhook_payload.get('id')}_{int(time.time())}"
 
         # Queue webhook processing task with Celery
         task = process_webhook.apply_async(
@@ -353,7 +456,6 @@ async def sync_product_to_odoo(request: Request):
     except Exception as e:
         _logger.error(f"Error processing webhook: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 
     except json.JSONDecodeError as e:
         _logger.error(f"Error decodificando JSON del webhook: {e}")

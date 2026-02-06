@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 import json
 import logging
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.staticfiles import StaticFiles
 from app.api.v1.endpoints.admin_endpoint import router as admin_router
 from app.api.v1.endpoints.odoo import router as odoo_router
 from app.api.v1.endpoints.auth import router as auth_router
@@ -26,7 +27,11 @@ _logger = logging.getLogger(__name__)
 
 
 app = FastAPI(lifespan=lifespan)
-
+app.mount(
+    "/images",
+    StaticFiles(directory="app/images"),
+    name="images"
+)
 origins = [
     "http://localhost",
     "http://localhost:3000",

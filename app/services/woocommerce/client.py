@@ -85,7 +85,7 @@ def wc_post(
     if not r.ok:
         # Log the error and raise a regular exception for Celery retry
         __logger__.error(f"WooCommerce POST error on {path}: {r.status_code} - {r.text}")
-        return None
+        raise Exception(f"WooCommerce POST error on {path}: {r.status_code} - {r.text}")
     return r.json()
 
 

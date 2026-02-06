@@ -1,7 +1,11 @@
 """
 Sync Management endpoints for Odoo-WooCommerce product synchronization.
 """
+from uuid import uuid4
+import requests
+import os
 import logging
+from re import Match
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
@@ -29,7 +33,7 @@ from app.tasks.sync_tasks import sync_product_to_woocommerce
 from app.tasks.task_monitoring import create_task_response
 from app.api.v1.endpoints.odoo import get_session_id, get_odoo_from_active_instance
 from celery import group
-import json
+
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +69,9 @@ async def list_odoo_products_with_sync_status(
     try:
         # Authenticate with Odoo
         uid = await odoo.odoo_authenticate()
-
+        if not uid:
+            raise HTTPException(
+                status_code=301, detail="Failed to authenticate with Odoo")
         # Build Odoo domain for filtering
         domain = []
         if search:
@@ -75,13 +81,20 @@ async def list_odoo_products_with_sync_status(
         if category_id:
             domain.append(["categ_id", "=", category_id])
 
+        domain.append(["sale_ok", "=", True])
         # Fetch from Odoo (over-fetch to account for status filtering)
         # If filtering by status, we need more products since some will be filtered out
-        fetch_limit = limit * 3 if filter_status else limit
+        fetch_limit = (offset - 1) * limit if offset > 1 else 0
+        # fetch_limit = limit * 3 if filter_status else limit
 
         logger.info(
             f"Fetching products from Odoo: domain={domain}, limit={fetch_limit}")
-
+        search_count = await odoo.search_count(
+            uid,
+            "product.template",
+            domain=[["sale_ok", "=", True], ["purchase_ok", "=", False]]
+        )
+        product_count = search_count["result"]
         odoo_response = await odoo.search_read(
             uid,
             "product.template",
@@ -127,6 +140,7 @@ async def list_odoo_products_with_sync_status(
 
         return OdooProductListResponse(
             total_count=total_before_filter,
+            total=product_count,
             products=[ProductSyncStatusResponse(
                 **p) for p in paginated_products],
             filters_applied={
@@ -138,13 +152,22 @@ async def list_odoo_products_with_sync_status(
             }
         )
     except HTTPException as ex:
-        logger.error(f"HTTPException in list_odoo_products_with_sync_status: {ex.detail}")
+        logger.error(
+            f"HTTPException in list_odoo_products_with_sync_status: {ex.detail}")
         raise
     except Exception as e:
         logger.error(
             f"Error fetching products with sync status: {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail=f"Error fetching products: {str(e)}")
+
+
+
+
+# @router.get("/download-image")
+# def download_image(url: str):
+#     result = download_and_save_image(url)
+#     return result
 
 
 @router.post("/products/batch-sync", response_model=BatchSyncResponse)
@@ -191,7 +214,9 @@ async def batch_sync_products(
                 "product_tag_ids",
                 "image_1920",
                 "attribute_line_ids",
-                "product_variant_count"
+                "product_variant_count",
+                "product_variant_id",
+                "product_template_image_ids"
             ],
             limit=len(odoo_ids)
         )
@@ -233,6 +258,7 @@ async def batch_sync_products(
         tasks = []
         for product in products:
             # Convert product to dict and queue task
+            # get url images
             task = sync_product_to_woocommerce.apply_async(
                 args=[product, instance_id],
                 kwargs={

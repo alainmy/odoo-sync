@@ -14,6 +14,7 @@ from app.db.base import Base
 from app.models.admin import Admin, WooCommerceInstance, ProductSync, CategorySync, TagSync, WebhookLog, CeleryTaskLog
 from app.models.attribute_models import AttributeSync, AttributeValueSync
 from app.models.user_model import User
+from app.models.pricelist_models import PricelistSync
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
