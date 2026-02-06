@@ -216,7 +216,9 @@ async def batch_sync_products(
                 "attribute_line_ids",
                 "product_variant_count",
                 "product_variant_id",
-                "product_template_image_ids"
+                "product_template_image_ids",
+                "is_published",
+                "weight"
             ],
             limit=len(odoo_ids)
         )

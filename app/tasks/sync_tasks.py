@@ -1,10 +1,8 @@
 """
 Celery tasks for synchronization operations between WooCommerce and Odoo.
 """
-from dotenv import load_dotenv
 from uuid import uuid4
 import logging
-import asyncio
 import os
 from typing import Dict, Any, List, Optional, Tuple
 from celery import Task
@@ -34,10 +32,8 @@ from app.tasks.sync_helpers import create_wc_api_client
 from app.services.woocommerce import manage_category_for_export, \
     get_wc_api_from_instance_config, build_category_chain, category_for_export
 from app.models.admin import CategorySync
-load_dotenv(override=True)
-IMAGE_DIR = os.getenv("IMAGE_DIR", "app/images/products")
-FAST_API_HOST = os.getenv("FAST_API_HOST", "http://localhost:8000")
-os.makedirs(IMAGE_DIR, exist_ok=True)
+from app.utils.image_helper import ImageHelper
+
 
 logger = logging.getLogger(__name__)
 
@@ -351,37 +347,6 @@ def sync_product_to_odoo(self, product_data: Dict[str, Any], instance_id: int) -
         raise self.retry(exc=exc, countdown=2 ** self.request.retries)
 
 
-ALLOWED_MIME = ("image/jpeg", "image/png", "image/webp")
-
-
-def download_and_save_image(url: str) -> dict:
-    headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "image/*",
-    }
-
-    with requests.get(url, headers=headers, stream=True, timeout=60, cookies={"session_id": "abc123"}) as r:
-        r.raise_for_status()
-        content_type = r.headers.get("Content-Type", "")
-        if content_type not in ALLOWED_MIME:
-            raise ValueError(f"MIME inválido: {content_type}")
-
-        extension = {
-            "image/jpeg": "jpg",
-            "image/png": "png",
-            "image/webp": "webp",
-        }[content_type]
-
-        filename = f"{uuid4().hex}.{extension}"
-        file_path = os.path.join(IMAGE_DIR, filename)
-        with open(file_path, "wb") as f:
-            for chunk in r.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-
-    return f"{FAST_API_HOST}/images/products/{filename}"
-
-
 @celery_app.task(
     bind=True,
     base=DatabaseTask,
@@ -435,11 +400,15 @@ def sync_product_to_woocommerce(
         # Normalize Odoo data (False -> None, many2one lists -> int)
         normalized_data = {}
         # logger.info(f"Normalizing Odoo product data: {odoo_product_data}")
+        image_helper = ImageHelper()
         image_urls = []
-        if 'image_1920' in odoo_product_data and odoo_product_data['image_1920']:
-            product_image = download_and_save_image(
+        images_to_cleanup = []
+        if 'image_1920' in odoo_product_data and odoo_product_data['image_1920'] \
+                and odoo_product_data["is_published"]:
+            product_image, file_path = image_helper.download_and_save_image(
                 f"{odoo_config['url']}/web/image/product.template/{odoo_product_data['id']}/image_1920")
             image_urls.append(product_image)
+            images_to_cleanup.append(file_path)
             normalized_data["image_urls"] = image_urls
         else:
             normalized_data["image_urls"] = image_urls
@@ -516,12 +485,15 @@ def sync_product_to_woocommerce(
                 elif len(value) == 2 and isinstance(value[0], int):
                     # Other many2one fields [id, name] -> extract id only
                     normalized_data[key] = value[0]
-                elif key == 'product_template_image_ids':
+                # only process images if product is published
+                elif key == 'product_template_image_ids' and odoo_product_data["is_published"]:
 
                     for img in value:
-                        image = download_and_save_image(
+                        image, file_path = image_helper.download_and_save_image(
                             f"{odoo_config['url']}/web/image/product.image/{img}/image_1920")
+
                         normalized_data["image_urls"].append(image)
+                        images_to_cleanup.append(file_path)
                     # Special case for image URLs
                     logger.info(f"Processing image_urls field: {value}")
 
@@ -698,7 +670,7 @@ def sync_product_to_woocommerce(
         # Final progress update
         update_task_progress(self, current=5, total=5,
                              message="Sync completed")
-
+        image_helper.remove_local_image(images_to_cleanup)
         return {
             "success": result.success,
             "action": result.action,
