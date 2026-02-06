@@ -354,7 +354,7 @@ def sync_product_to_odoo(self, product_data: Dict[str, Any], instance_id: int) -
 ALLOWED_MIME = ("image/jpeg", "image/png", "image/webp")
 
 
-async def download_and_save_image(url: str) -> dict:
+def download_and_save_image(url: str) -> dict:
     headers = {
         "User-Agent": "Mozilla/5.0",
         "Accept": "image/*",
