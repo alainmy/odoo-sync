@@ -120,10 +120,6 @@ async def list_odoo_categories_with_sync_status(
             f"Fetching categories from Odoo: domain={domain}, limit={limit}")
 
         # Fetch from Odoo
-        page = max(int(offset or 1), 1)
-        limit = max(int(limit or 20), 1)
-
-        odoo_offset = (page - 1) * limit
 
         search_count = await odoo.search_count(
             uid,
@@ -137,7 +133,7 @@ async def list_odoo_categories_with_sync_status(
             domain=domain if domain else [],
             fields=["id", "name", "complete_name", "parent_id"],
             limit=limit,
-            offset=odoo_offset
+            offset=offset
         )
 
         odoo_categories = odoo_response.get("result", [])

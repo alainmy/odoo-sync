@@ -84,15 +84,15 @@ async def list_odoo_products_with_sync_status(
         domain.append(["sale_ok", "=", True])
         # Fetch from Odoo (over-fetch to account for status filtering)
         # If filtering by status, we need more products since some will be filtered out
-        fetch_limit = (offset - 1) * limit if offset > 1 else 0
+        # fetch_limit = offset
         # fetch_limit = limit * 3 if filter_status else limit
 
         logger.info(
-            f"Fetching products from Odoo: domain={domain}, limit={fetch_limit}")
+            f"Fetching products from Odoo: domain={domain}, limit={limit}, offset={offset}")
         search_count = await odoo.search_count(
             uid,
             "product.template",
-            domain=[["sale_ok", "=", True], ["purchase_ok", "=", False]]
+            domain=[["sale_ok", "=", True]]
         )
         product_count = search_count["result"]
         odoo_response = await odoo.search_read(
@@ -116,7 +116,7 @@ async def list_odoo_products_with_sync_status(
                 "attribute_line_ids",
                 "product_variant_count"
             ],
-            limit=fetch_limit,
+            limit=limit,
             offset=offset
         )
 
@@ -139,7 +139,7 @@ async def list_odoo_products_with_sync_status(
             f"Returning {len(paginated_products)} products after filtering")
 
         return OdooProductListResponse(
-            total_count=total_before_filter,
+            total_count=product_count,
             total=product_count,
             products=[ProductSyncStatusResponse(
                 **p) for p in paginated_products],
