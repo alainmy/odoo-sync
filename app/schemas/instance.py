@@ -1,8 +1,14 @@
+from prometheus_client import Enum
 from pydantic import BaseModel, HttpUrl
 from typing import Optional
 from datetime import datetime
 
 from app.schemas import language
+
+
+class DescritionType(str, Enum):
+    SALE_DESCRIPTION = "sale_description"
+    PRODUCT_DESCRIPTION = "product_description"
 
 
 class WooCommerceInstanceBase(BaseModel):
@@ -16,6 +22,7 @@ class WooCommerceInstanceBase(BaseModel):
     odoo_password: str
     is_active: bool = False
     odoo_language: Optional[str] = "en_US"
+    product_descriptions: Optional[str] = None
 
 
 class WooCommerceInstanceCreate(WooCommerceInstanceBase):
@@ -33,6 +40,7 @@ class WooCommerceInstanceUpdate(BaseModel):
     odoo_password: Optional[str] = None
     is_active: Optional[bool] = None
     odoo_language: Optional[str] = None
+    product_descriptions: Optional[str] = None
 
 
 class WooCommerceInstance(WooCommerceInstanceBase):
