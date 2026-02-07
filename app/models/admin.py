@@ -19,28 +19,29 @@ class CategorySync(Base):
     odoo_id = Column(Integer, index=True)
     odoo_name = Column(String(255), index=True, nullable=True)
     woocommerce_id = Column(Integer, index=True)
-    
+
     # Relación con instancia
-    instance_id = Column(Integer, ForeignKey("woocommerce_instances.id"), nullable=True, index=True)
-    
+    instance_id = Column(Integer, ForeignKey(
+        "woocommerce_instances.id"), nullable=True, index=True)
+
     # Status flags
     created = Column(Boolean, default=False)
     updated = Column(Boolean, default=False)
     skipped = Column(Boolean, default=False)
     error = Column(Boolean, default=False)
     needs_sync = Column(Boolean, default=False)
-    
+
     # Messages
     message = Column(String(500), index=True)
     error_details = Column(String(500), index=True)
-    
+
     # Timestamps
     wc_date_created = Column(DateTime(timezone=True), nullable=True)
     wc_date_updated = Column(DateTime(timezone=True), nullable=True)
     odoo_write_date = Column(DateTime(timezone=True), nullable=True)
     sync_date = Column(DateTime(timezone=True), nullable=True)
     last_synced_at = Column(DateTime(timezone=True), nullable=True)
-    
+
     # Audit timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -53,28 +54,29 @@ class TagSync(Base):
     odoo_id = Column(Integer, index=True)
     odoo_name = Column(String(255), index=True, nullable=True)
     woocommerce_id = Column(Integer, index=True)
-    
+
     # Relación con instancia
-    instance_id = Column(Integer, ForeignKey("woocommerce_instances.id"), nullable=True, index=True)
-    
+    instance_id = Column(Integer, ForeignKey(
+        "woocommerce_instances.id"), nullable=True, index=True)
+
     # Status flags
     created = Column(Boolean, default=False)
     updated = Column(Boolean, default=False)
     skipped = Column(Boolean, default=False)
     error = Column(Boolean, default=False)
     needs_sync = Column(Boolean, default=False)
-    
+
     # Messages
     message = Column(String(500), index=True)
     error_details = Column(String(500), index=True)
-    
+
     # Timestamps
     wc_date_created = Column(DateTime(timezone=True), nullable=True)
     wc_date_updated = Column(DateTime(timezone=True), nullable=True)
     odoo_write_date = Column(DateTime(timezone=True), nullable=True)
     sync_date = Column(DateTime(timezone=True), nullable=True)
     last_synced_at = Column(DateTime(timezone=True), nullable=True)
-    
+
     # Audit timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -86,11 +88,12 @@ class ProductSync(Base):
     id = Column(Integer, primary_key=True, index=True)
     odoo_id = Column(Integer, index=True)
     woocommerce_id = Column(Integer, index=True)
-    
+
     odoo_name = Column(String(255), index=True)
     # Relación con instancia
-    instance_id = Column(Integer, ForeignKey("woocommerce_instances.id"), nullable=True, index=True)
-    
+    instance_id = Column(Integer, ForeignKey(
+        "woocommerce_instances.id"), nullable=True, index=True)
+
     # Status flags
     created = Column(Boolean, default=False)
     updated = Column(Boolean, default=False)
@@ -98,18 +101,23 @@ class ProductSync(Base):
     error = Column(Boolean, default=False)
     published = Column(Boolean, default=False)  # WooCommerce publish status
     needs_sync = Column(Boolean, default=False)  # Pending sync flag
-    
+
     # Messages
     message = Column(String(500), index=True)
     error_details = Column(String(500), index=True)
-    
+
     # Timestamps - inspired by ks.woo.product.template
-    wc_date_created = Column(DateTime(timezone=True), nullable=True)  # WC creation date
-    wc_date_updated = Column(DateTime(timezone=True), nullable=True)  # WC update date
-    odoo_write_date = Column(DateTime(timezone=True), nullable=True)  # Odoo last modification
-    sync_date = Column(DateTime(timezone=True), nullable=True)  # Last modification date
-    last_synced_at = Column(DateTime(timezone=True), nullable=True)  # Last successful sync
-    
+    wc_date_created = Column(DateTime(timezone=True),
+                             nullable=True)  # WC creation date
+    wc_date_updated = Column(DateTime(timezone=True),
+                             nullable=True)  # WC update date
+    odoo_write_date = Column(DateTime(timezone=True),
+                             nullable=True)  # Odoo last modification
+    # Last modification date
+    sync_date = Column(DateTime(timezone=True), nullable=True)
+    last_synced_at = Column(DateTime(timezone=True),
+                            nullable=True)  # Last successful sync
+
     # Audit timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -122,18 +130,24 @@ class WebhookLog(Base):
     __tablename__ = "webhook_logs"
 
     id = Column(Integer, primary_key=True, index=True)
-    event_id = Column(String(255), unique=True, index=True)  # WooCommerce webhook ID
-    event_type = Column(String(100), index=True)  # e.g., "product.created", "order.created"
-    
+    # WooCommerce webhook ID
+    event_id = Column(String(255), unique=True, index=True)
+    # e.g., "product.created", "order.created"
+    event_type = Column(String(100), index=True)
+
     # Relación con instancia
-    instance_id = Column(Integer, ForeignKey("woocommerce_instances.id"), nullable=True, index=True)
-    
-    payload_hash = Column(String(64), index=True)  # SHA256 hash of payload for deduplication
+    instance_id = Column(Integer, ForeignKey(
+        "woocommerce_instances.id"), nullable=True, index=True)
+
+    # SHA256 hash of payload for deduplication
+    payload_hash = Column(String(64), index=True)
     payload = Column(JSON)  # Full webhook payload
-    status = Column(String(50), default="pending")  # pending, processing, completed, failed
+    # pending, processing, completed, failed
+    status = Column(String(50), default="pending")
     retry_count = Column(Integer, default=0)
     error_message = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    created_at = Column(DateTime(timezone=True),
+                        server_default=func.now(), index=True)
     processed_at = Column(DateTime(timezone=True), nullable=True)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -148,16 +162,19 @@ class CeleryTaskLog(Base):
     task_id = Column(String(255), unique=True, index=True)
     parent_task_id = Column(String(255), index=True, nullable=True)
     task_name = Column(String(255), index=True)
-    
+
     # Relación con instancia
-    instance_id = Column(Integer, ForeignKey("woocommerce_instances.id"), nullable=True, index=True)
-    
+    instance_id = Column(Integer, ForeignKey(
+        "woocommerce_instances.id"), nullable=True, index=True)
+
     task_args = Column(JSON)
     task_kwargs = Column(JSON)
-    status = Column(String(50), default="pending")  # pending, started, retry, success, failure
+    # pending, started, retry, success, failure
+    status = Column(String(50), default="pending")
     result = Column(JSON, nullable=True)
     error_message = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    created_at = Column(DateTime(timezone=True),
+                        server_default=func.now(), index=True)
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
 
@@ -170,23 +187,24 @@ class WooCommerceInstance(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), unique=True, index=True)
-    
+
     # Relación con usuario creador
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    
+    user_id = Column(Integer, ForeignKey("users.id"),
+                     nullable=False, index=True)
+
     # WooCommerce connection settings
     woocommerce_url = Column(String(500))
     woocommerce_consumer_key = Column(String(255))
     woocommerce_consumer_secret = Column(String(255))
     webhook_secret = Column(String(255))
     is_active = Column(Boolean, default=True)
-    
+
     # Odoo connection settings
     odoo_url = Column(String(500))
     odoo_db = Column(String(255))
     odoo_username = Column(String(255))
     odoo_password = Column(String(255))
-    
+
     # Sync settings
     auto_sync_products = Column(Boolean, default=False)
     auto_sync_orders = Column(Boolean, default=False)
@@ -194,9 +212,12 @@ class WooCommerceInstance(Base):
     sync_interval_minutes = Column(Integer, default=15)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    
+
     # Relationships
-    webhooks = relationship("WebhookConfig", back_populates="instance", cascade="all, delete-orphan")
+    webhooks = relationship(
+        "WebhookConfig", back_populates="instance", cascade="all, delete-orphan")
 
     # Odoo language setting
     odoo_language = Column(String(10), default="en_US")
+
+    product_descriptions = Column(String(20), default="product_description")

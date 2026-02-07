@@ -261,6 +261,8 @@ async def batch_sync_products(
         for product in products:
             # Convert product to dict and queue task
             # get url images
+            if instance.product_descriptions == "description_sale":
+                product["description"] = product.pop("description_sale", "")
             task = sync_product_to_woocommerce.apply_async(
                 args=[product, instance_id],
                 kwargs={
