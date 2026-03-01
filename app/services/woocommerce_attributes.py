@@ -191,7 +191,7 @@ async def create_or_update_woocommerce_attribute(
         # Preparar data para WooCommerce
         wc_data = {
             "name": odoo_attribute.name,
-            "slug": original_slug,
+            "slug": slug,
             "type": "select",
             "order_by": "menu_order",
             "has_archives": False
@@ -202,6 +202,7 @@ async def create_or_update_woocommerce_attribute(
             # El atributo EXISTE en WooCommerce
             if update_existing:
                 _logger.info(f"Updating attribute ID {woocommerce_id} in WooCommerce")
+                wc_data.pop("slug", None)  # Asegurar que el slug se actualice si el nombre cambió
                 update_response = wc_request_with_logging(
                     "PUT",
                     f"products/attributes/{woocommerce_id}",

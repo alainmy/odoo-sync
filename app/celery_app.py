@@ -64,6 +64,10 @@ celery_app.conf.update(
             'queue': 'sync_queue',
             'priority': 6
         },
+        'app.tasks.instance_tasks.create_wwc_webhooks_for_instance': {
+            'queue': 'sync_queue',
+            'priority': 4
+        },
         'app.tasks.pricelist_tasks.sync_all_product_prices': {
             'queue': 'sync_queue',
             'priority': 4

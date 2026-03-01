@@ -16,7 +16,7 @@ from app.crud import crud_instance
 from app.repositories import ProductSyncRepository
 from app.core.config import settings
 from app.auth.oauth2 import get_current_user
-from app.models.admin import Admin
+from app.models.admin import Admin, ProductSync
 from app.utils.instance_helpers import get_active_instance_id
 from app.schemas.sync_schemas import (
     OdooProductListResponse,
@@ -160,8 +160,6 @@ async def list_odoo_products_with_sync_status(
             f"Error fetching products with sync status: {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail=f"Error fetching products: {str(e)}")
-
-
 
 
 # @router.get("/download-image")
@@ -432,19 +430,43 @@ async def get_sync_statistics(
     Only shows data from the user's active instance.
     """
     try:
-        instance_id = get_active_instance_id(db, current_user)
-        from app.models.admin import ProductSync
+        instance = crud_instance.get_active_instance(
+            db, user_id=current_user.id)
+        # Authenticate with Odoo
+        odoo_client = OdooClient(
+            url=instance.odoo_url,
+            db=instance.odoo_db,
+            username=instance.odoo_username,
+            password=instance.odoo_password
+        )
+        uid = await odoo_client.odoo_authenticate()
+        if not uid:
+            raise HTTPException(
+                status_code=401,
+                detail="Failed to authenticate with Odoo"
+            )
+
+        # Get total count from Odoo using search (returns only IDs)
+        search_response = await odoo_client.search_read(
+            uid,
+            "product.template",
+            domain=[["sale_ok", "=", True]],
+            fields=["id"],
+            limit=10000,  # High limit to get all
+            offset=0
+        )
+        total_in_odoo = len(search_response.get("result", []))
 
         # Calculate statistics filtered by instance_id
         base_query = db.query(ProductSync).filter(
-            ProductSync.instance_id == instance_id)
+            ProductSync.instance_id == instance.id)
 
         total = base_query.count()
-        never_synced = base_query.filter(
-            ProductSync.last_synced_at == None).count()
+
         synced = base_query.filter(
             and_(ProductSync.last_synced_at != None, ProductSync.error == False)
         ).count()
+        never_synced = total_in_odoo - synced
         errors = base_query.filter(ProductSync.error == True).count()
 
         # Get last sync time for this instance
@@ -453,7 +475,7 @@ async def get_sync_statistics(
         ).order_by(ProductSync.last_synced_at.desc()).first()
 
         return SyncStatisticsResponse(
-            total_products=total,
+            total_products=total_in_odoo,
             never_synced=never_synced,
             synced=synced,
             modified=0,  # Would need to compare with Odoo

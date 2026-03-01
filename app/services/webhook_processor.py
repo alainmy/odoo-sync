@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.models.admin import WebhookLog, ProductSync, WooCommerceInstance
 from app.repositories.webhook_config_repository import WebhookConfigRepository
+from app.repositories.order_sync_repository import OrderSyncRepository
 
 logger = logging.getLogger(__name__)
 
@@ -369,6 +370,7 @@ class WebhookProcessor:
             Processing result
         """
         try:
+            order_sync_repo = OrderSyncRepository(self.db)
             order_id = payload.get('id')
             order_number = payload.get('number')
             
@@ -376,8 +378,16 @@ class WebhookProcessor:
                 f"Processing order.created: WC Order #{order_number} (ID: {order_id})"
             )
             
-            # Here you would integrate with your order sync logic
-            # For now, just log the event
+            # Process order data and create sync record
+            
+            # Create order sync record
+            order_sync = order_sync_repo.add_order_sync(
+                woo_id=order_id,
+                instance_id=instance_id,
+                payload=payload
+            )
+            
+            logger.info(f"Created order sync record: {order_sync.id}")
             
             return {
                 'success': True,

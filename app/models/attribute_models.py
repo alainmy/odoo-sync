@@ -18,7 +18,7 @@ from app.db.base import Base
 class AttributeSync(Base):
     """
     Mapeo de sincronización: Odoo product.attribute ↔ WooCommerce products/attributes
-    
+
     Ejemplo:
     - odoo_attribute_id: 5 (Color en Odoo)
     - woocommerce_id: 2 (Color en WooCommerce)
@@ -27,19 +27,26 @@ class AttributeSync(Base):
     __tablename__ = "attribute_syncs"
 
     id = Column(Integer, primary_key=True, index=True)
-    
+
     # Relación con instancia WooCommerce
-    instance_id = Column(Integer, ForeignKey('woocommerce_instances.id'), nullable=False)
-    
+    instance_id = Column(Integer,
+                         ForeignKey('woocommerce_instances.id'),
+                         onupdate="CASCADE",
+                         nullable=False, index=True)
+
     # IDs de sincronización
-    odoo_attribute_id = Column(Integer, nullable=False, index=True)  # ID en Odoo (product.attribute)
-    odoo_name = Column(String(255), index=True, nullable=True)  # Nombre del atributo en Odoo
-    woocommerce_id = Column(Integer, nullable=True, index=True)  # ID en WooCommerce API
-    
+    # ID en Odoo (product.attribute)
+    odoo_attribute_id = Column(Integer, nullable=False, index=True)
+    # Nombre del atributo en Odoo
+    odoo_name = Column(String(255), index=True, nullable=True)
+    woocommerce_id = Column(Integer, nullable=True,
+                            index=True)  # ID en WooCommerce API
+
     # Metadatos de WooCommerce
     slug = Column(String(255), nullable=True)
-    woo_type = Column(String(50), default='select')  # Siempre 'select' para WooCommerce
-    
+    # Siempre 'select' para WooCommerce
+    woo_type = Column(String(50), default='select')
+
     # Estado de sincronización
     created = Column(Boolean, default=False)
     updated = Column(Boolean, default=False)
@@ -47,25 +54,27 @@ class AttributeSync(Base):
     error = Column(Boolean, default=False)
     message = Column(Text, nullable=True)
     error_details = Column(Text, nullable=True)
-    
+
     # Control de sincronización
     need_update = Column(Boolean, default=False)
     is_mapped = Column(Boolean, default=False)  # Mapeo manual
-    
+
     # Relaciones
     instance = relationship("WooCommerceInstance")
-    
+
     # Timestamps
     sync_date = Column(DateTime, nullable=True)  # Última modificación
-    last_exported_date = Column(DateTime, nullable=True)  # Última exportación exitosa
+    # Última exportación exitosa
+    last_exported_date = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
 
 
 class AttributeValueSync(Base):
     """
     Mapeo de sincronización: Odoo product.attribute.value ↔ WooCommerce attribute terms
-    
+
     Ejemplo:
     - odoo_value_id: 23 (Rojo en Odoo)
     - woocommerce_id: 45 (Red term en WooCommerce)
@@ -75,20 +84,27 @@ class AttributeValueSync(Base):
     __tablename__ = "attribute_value_syncs"
 
     id = Column(Integer, primary_key=True, index=True)
-    
+
     # Relación con instancia WooCommerce
-    instance_id = Column(Integer, ForeignKey('woocommerce_instances.id'), nullable=False)
-    
+    instance_id = Column(Integer,
+                         ForeignKey('woocommerce_instances.id'),
+                         onupdate="CASCADE",
+                         nullable=False, index=True)
+
     # IDs de sincronización
-    odoo_value_id = Column(Integer, nullable=False, index=True)  # ID en Odoo (product.attribute.value)
-    odoo_name = Column(String(255), index=True, nullable=True)  # Nombre del valor en Odoo
-    woocommerce_id = Column(Integer, nullable=True, index=True)  # Term ID en WooCommerce
-    woocommerce_attribute_id = Column(Integer, nullable=True)  # Parent Attribute ID en WooCommerce
-    
+    # ID en Odoo (product.attribute.value)
+    odoo_value_id = Column(Integer, nullable=False, index=True)
+    # Nombre del valor en Odoo
+    odoo_name = Column(String(255), index=True, nullable=True)
+    woocommerce_id = Column(Integer, nullable=True,
+                            index=True)  # Term ID en WooCommerce
+    # Parent Attribute ID en WooCommerce
+    woocommerce_attribute_id = Column(Integer, nullable=True)
+
     # Metadatos de WooCommerce
     slug = Column(String(255), nullable=True)
     description = Column(Text, nullable=True)
-    
+
     # Estado de sincronización
     created = Column(Boolean, default=False)
     updated = Column(Boolean, default=False)
@@ -96,15 +112,16 @@ class AttributeValueSync(Base):
     error = Column(Boolean, default=False)
     message = Column(Text, nullable=True)
     error_details = Column(Text, nullable=True)
-    
+
     # Control de sincronización
     need_update = Column(Boolean, default=False)
-    
+
     # Relaciones
     instance = relationship("WooCommerceInstance")
-    
+
     # Timestamps
     sync_date = Column(DateTime, nullable=True)
     last_exported_date = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)

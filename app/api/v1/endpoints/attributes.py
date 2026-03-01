@@ -594,7 +594,12 @@ async def list_odoo_attributes_with_sync_status(
                 status_code=401,
                 detail="Failed to authenticate with Odoo"
             )
-
+        search_count = await odoo_client.search_count(
+            uid,
+            "product.attribute",
+            domain=[]
+        )
+        product_count = search_count["result"]
         # Build Odoo domain for filtering
         domain = []
         if search:
@@ -674,7 +679,7 @@ async def list_odoo_attributes_with_sync_status(
         _logger.info(f"Returning {len(enriched_attributes)} attributes after filtering")
 
         return AttributeListResponse(
-            total_count=len(enriched_attributes),
+            total_count=product_count,
             attributes=[AttributeSyncStatusResponse(**a) for a in enriched_attributes],
             filters_applied={
                 "status": filter_status,

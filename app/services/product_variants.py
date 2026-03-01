@@ -9,8 +9,10 @@ import asyncio
 from typing import Dict, List, Optional, Any
 from sqlalchemy.orm import Session
 
-from app.services.woocommerce import wc_request,wc_request_with_logging
+from app.services.woocommerce import wc_request, wc_request_with_logging
 from app.repositories.attribute_repository import AttributeSyncRepository
+from app.models.admin import WooCommerceInstance
+from app.services.woocommerce.converters import manage_price_list_for_export
 
 _logger = logging.getLogger(__name__)
 
@@ -27,7 +29,8 @@ def has_variants(odoo_product_data: Dict[str, Any]) -> bool:
     """
     # Verificar si tiene attribute_line_ids (líneas de atributos de variantes)
     attribute_lines = odoo_product_data.get('attribute_line_ids', [])
-    _logger.debug(f"Attribute lines of product {odoo_product_data.get('name')}: {attribute_lines}")
+    _logger.debug(
+        f"Attribute lines of product {odoo_product_data.get('name')}: {attribute_lines}")
     # También verificar product_variant_count
     variant_count = odoo_product_data.get('product_variant_count', 1)
 
@@ -71,24 +74,28 @@ def validate_attributes_synced(
                 attr_id = attr_id[0]
 
             attr_sync = repo.get_by_odoo_id(attr_id, instance_id)
-           
+
             if not attr_sync or not attr_sync.woocommerce_id:
                 missing_attributes.append({
                     'id': attr_id,
                     'name': line.get('attribute_id')[1] if isinstance(line.get('attribute_id'), list) else f"Attribute {attr_id}"
                 })
                 continue
-            _logger.info(f"Woo ID: {attr_sync.woocommerce_id}, Odoo ID: {attr_sync.odoo_attribute_id}")
+            _logger.info(
+                f"Woo ID: {attr_sync.woocommerce_id}, Odoo ID: {attr_sync.odoo_attribute_id}")
             # Verificar valores del atributo
             value_ids = line.get('value_ids', [])
-            _logger.info(f"Validating attribute values for attribute {attr_id}: {value_ids}")
+            _logger.info(
+                f"Validating attribute values for attribute {attr_id}: {value_ids}")
             for value_id in value_ids:
                 value_sync = repo.get_attribute_value_sync_by_odoo_id(
                     value_id, instance_id)
-                _logger.info(f"Woo Value Sync: {value_sync.woocommerce_id}, Odoo Value ID: {value_sync.odoo_value_id}" if value_sync else "No Value Sync Found")
+                _logger.info(
+                    f"Woo Value Sync: {value_sync.woocommerce_id}, Odoo Value ID: {value_sync.odoo_value_id}" if value_sync else "No Value Sync Found")
                 _logger.info(f"value sync: {value_sync}")
                 if not value_sync or not value_sync.woocommerce_id:
-                    _logger.info(f"Missing sync for attribute value {value_id} of attribute {attr_id}")
+                    _logger.info(
+                        f"Missing sync for attribute value {value_id} of attribute {attr_id}")
                     missing_values.append({
                         'id': value_id,
                         'attribute_id': attr_id
@@ -279,6 +286,7 @@ async def sync_product_variations(
             ],
             [
                 'id', 'default_code', 'lst_price', 'qty_available',
+                'product_tmpl_id',
                 'product_template_variant_value_ids', 'image_1920',
                 'display_name'
             ]
@@ -290,8 +298,26 @@ async def sync_product_variations(
         for variant in variants_response:
             try:
                 variant_id = variant.get('id')
-                sku = variant.get('default_code', '')
+                product_tmpl_id = variant.get('product_tmpl_id', '')[0] if isinstance(
+                    variant.get('product_tmpl_id'), list) else None
+                # sku = variant.get('default_code', '')
+                sku = variant.get('product_tmpl_id', '')[1] if isinstance(
+                    variant.get('product_tmpl_id'), list) else None
+                sku = f"{sku.replace(' ', '-').upper()}-{variant_id}" if sku else f"variant-{variant_id}"
+
+                # manage price
                 price = variant.get('lst_price', 0)
+                instance = db.query(WooCommerceInstance).filter(
+                    WooCommerceInstance.id == instance_id).first()
+                if instance.price_list:
+                    price = manage_price_list_for_export(
+                        db=db,
+                        odoo_client=odoo_client,
+                        product_id=variant_id,
+                        product_tmpl_id=product_tmpl_id,
+                        instance_id=instance_id
+                    )
+                    price = str(price) if price else None
                 stock = variant.get('qty_available', 0)
                 variant_value_ids = variant.get(
                     'product_template_variant_value_ids', [])
@@ -304,20 +330,27 @@ async def sync_product_variations(
                     db,
                     odoo_client
                 )
+                _logger.info(
+                    f"Built variation attributes for variant {variant_id}: {variation_attrs}")
 
                 # Preparar datos para WooCommerce
                 wc_variation_data = {
-                    "sku": sku,
-                    "regular_price": str(price),
-                    "stock_quantity": int(stock),
+                    "sku": str(sku or ""),  # ✅ Asegurar que siempre sea string
+                    "regular_price": str(price or "0"),
+                    "stock_quantity": int(stock or 0),
                     "manage_stock": True,
                     "attributes": variation_attrs
                 }
+                _logger.info(
+                    f"Built variation data for variant {variant_id}: {wc_variation_data}")
                 # Buscar si exite la cariante
                 variant_exist = None
                 params_search = {"per_page": 1}
-                
+                _logger.info(
+                    f"Searching for existing variants of product with sku: {sku} in WooCommerce.")
                 if sku:
+                    _logger.info(
+                        f"Searching for existing variant with SKU {sku} in WooCommerce.")
                     params_search["sku"] = sku
                     variant_matches = wc_request_with_logging(
                         "GET",
@@ -326,12 +359,14 @@ async def sync_product_variations(
                         wcapi=wcapi
                     )
                     if variant_matches:
-                        _logger.info(f"Variant with SKU {sku} exists in WooCommerce.")
+                        _logger.info(
+                            f"Variant with SKU {sku} exists in WooCommerce.")
                         for matches in variant_matches:
                             if matches.get("sku") == sku:
                                 variant_exist = matches
                                 break
-                        _logger.info(f"Updating existing variant {variant_exist.get('id')} for SKU {sku}.")
+                        _logger.info(
+                            f"Updating existing variant {variant_exist.get('id')} for SKU {sku}.")
                         response = wc_request_with_logging(
                             "PUT",
                             f"products/{wc_parent_id}/variations/{variant_exist.get('id')}",
@@ -340,8 +375,13 @@ async def sync_product_variations(
                         )
                         updated_count = updated_count + 1
                         _logger.info(f"Variant update response: {response}")
+                _logger.info(f"Variant exist: {variant_exist}")
                 # Crear variación en WooCommerce
                 if not variant_exist:
+                    _logger.info(
+                        f"Creating new variant for SKU {sku} in WooCommerce.")
+                    _logger.info(
+                        f"Variation data to create: {wc_variation_data}")
                     response = wc_request_with_logging(
                         "POST",
                         f"products/{wc_parent_id}/variations",

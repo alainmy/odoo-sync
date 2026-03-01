@@ -21,7 +21,7 @@ class WebhookConfigBase(BaseModel):
     """Base schema for webhook configuration."""
     instance_id: int = Field(..., description="WooCommerce instance ID")
     topic: WebhookTopic = Field(..., description="Webhook topic/event")
-    delivery_url: str = Field(..., description="URL where webhook payload is sent")
+    delivery_url: str = Field(None, description="URL where webhook payload is sent")
     name: Optional[str] = Field(None, description="Friendly name for webhook")
     secret: Optional[str] = Field(None, description="Secret for webhook signature verification")
     status: WebhookStatus = Field(default="active", description="Webhook status")

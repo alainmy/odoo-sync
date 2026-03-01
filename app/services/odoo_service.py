@@ -41,3 +41,39 @@ async def get_moves(
         raise HTTPException(status_code=e.status_code, detail=e.detail)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def create_customer_in_odoo(customer_data: dict,
+                            odoo_client: OdooClient = None) -> dict:
+    """
+    Crea un cliente en Odoo utilizando la API XML-RPC.
+
+    Args:
+        customer_data: Diccionario con los datos del cliente a crear. 
+                       Debe contener al menos 'name' y 'email'.
+
+    Returns:
+        Diccionario con el resultado de la operación de creación del cliente en Odoo.
+    """
+    try:
+        odoo = odoo_client if odoo_client else OdooClient()
+        uid = odoo.odoo_authenticate()
+        if not uid:
+            raise HTTPException(
+                status_code=401, detail="No se pudo autenticar con Odoo")
+
+        # Preparar los datos del cliente para Odoo
+
+        # Crear el cliente en Odoo
+        result = odoo.create(uid, 'res.partner', customer_data)
+
+        if result.get("error"):
+            raise HTTPException(
+                status_code=400, detail=result["error"]["message"])
+
+        return result["result"]
+
+    except HTTPException as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

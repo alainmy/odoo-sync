@@ -1,6 +1,7 @@
 """
 Celery tasks for synchronization operations between WooCommerce and Odoo.
 """
+import email
 from uuid import uuid4
 import logging
 import os
@@ -31,8 +32,10 @@ from app.tasks.task_monitoring import update_task_progress
 from app.tasks.sync_helpers import create_wc_api_client
 from app.services.woocommerce import manage_category_for_export, \
     get_wc_api_from_instance_config, build_category_chain, category_for_export
-from app.models.admin import CategorySync
+from app.models.admin import CategorySync, ProductSync
 from app.utils.image_helper import ImageHelper
+from app.models.user_model import ClientSync
+from app.services.odoo_service import create_customer_in_odoo
 
 
 logger = logging.getLogger(__name__)
@@ -266,7 +269,12 @@ class DatabaseTask(Task):
     default_retry_delay=60
 )
 @log_celery_task_with_retry
-def sync_product_to_odoo(self, product_data: Dict[str, Any], instance_id: int) -> Dict[str, Any]:
+def sync_product_to_odoo(self,
+                         product_data: Dict[str, Any] = None,
+                         instance_id: int = None,
+                         delete: bool = False,
+                         product_id: int = None
+                         ) -> Dict[str, Any]:
     """
     Sync a single product from WooCommerce to Odoo.
 
@@ -313,14 +321,30 @@ def sync_product_to_odoo(self, product_data: Dict[str, Any], instance_id: int) -
 
         # Check if product exists in Odoo
         sku = product_data.get("sku")
+        woo_id = product_data.get("id")
+        prododuct_sync = self.db.query(ProductSync).filter(
+            ProductSync.woocommerce_id == woo_id,
+            ProductSync.instance_id == instance_id
+        ).first()
         existing_products = []
-        if sku:
+        if not prododuct_sync:
+            logger.info(
+                f"No existing sync record for WooCommerce product ID {woo_id}")
+            return {
+                "success": False,
+                "action": "not_synced",
+                "odoo_id": None,
+                "woocommerce_id": product_data.get("id"),
+                "sku": sku
+            }
+        if prododuct_sync:
+            logger.info(
+                f"Found sync record for WooCommerce product ID {woo_id}, Odoo ID {prododuct_sync.odoo_id}")
             existing_products = client.search_read(
                 "product.product",
-                domain=[("default_code", "=", sku)],
+                domain=[("id", "=", prododuct_sync.odoo_id)],
                 fields=["id", "name"]
             )
-
         if existing_products:
             # Update existing product
             product_id = existing_products[0]["id"]
@@ -396,7 +420,13 @@ def sync_product_to_woocommerce(
                 "username": settings.odoo_username,
                 "password": settings.odoo_password
             }
-
+        logger.info(f"ODOO CONFIG: {odoo_config}")
+        odoo_client = OdooClient(
+            odoo_config["url"],
+            odoo_config["db"],
+            odoo_config["username"],
+            odoo_config["password"]
+        )
         # Normalize Odoo data (False -> None, many2one lists -> int)
         normalized_data = {}
         # logger.info(f"Normalizing Odoo product data: {odoo_product_data}")
@@ -435,12 +465,6 @@ def sync_product_to_woocommerce(
                             f"product_tag_ids contiene solo IDs: {value}. Consultando nombres en Odoo...")
                         try:
                             # Conectar a Odoo para obtener los nombres de los tags
-                            odoo_client = OdooClient(
-                                odoo_config["url"],
-                                odoo_config["db"],
-                                odoo_config["username"],
-                                odoo_config["password"]
-                            )
                             # Usar la versión síncrona de search_read
                             logger.info(
                                 f"Llamando a search_read_sync para product.tag con IDs: {value}")
@@ -502,6 +526,7 @@ def sync_product_to_woocommerce(
             else:
                 normalized_data[key] = value
         logger.info(f"IMAGES URLS: {normalized_data['image_urls']}")
+        normalized_data["image_urls"] = []
         # Generate globally unique slug: name + odoo_id + instance_id
         # This prevents slug conflicts across multiple instances
         base_slug = normalized_data["name"].replace(" ", "-").lower()
@@ -540,7 +565,6 @@ def sync_product_to_woocommerce(
             f"Product has variants: {product_has_variants}")
         is_variable = False
         product_attributes = None
-        odoo_client = None
 
         if product_has_variants:
             logger.info(
@@ -614,7 +638,8 @@ def sync_product_to_woocommerce(
             wcapi=wcapi,
             instance_id=instance_id,
             is_variable=is_variable,
-            product_attributes=product_attributes
+            product_attributes=product_attributes,
+            odoo_client=odoo_client
         )
 
         # Create or update in WooCommerce
@@ -884,14 +909,44 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                     "city": order_data.get("billing", {}).get("city"),
                     "zip": order_data.get("billing", {}).get("postcode"),
                 }
-                partner_id = client.create("res.partner", partner_data)
+                partner = create_customer_in_odoo(
+                    partner_data, odoo_client=client)
+                partner_id = partner.get("id")
+                if partner_id:
+                    logger.info(
+                        f"Customer created in Odoo with ID {partner_id}")
+                    # create sync record for partner
+                    partner_sync = ClientSync(
+                        odoo_id=partner_id,
+                        woo_id=order_data.get('customer_id'),
+                        email=customer_email,
+                        name=partner_data.get("name")
+                    )
+                    self.db.add(partner_sync)
+                    self.db.commit()
 
         # Create sale order
         order_lines = []
         for line in order_data.get("line_items", []):
-            # Find product in Odoo
+            # Find product in table prodruct sync
+            product_sync = self.db.query(ProductSync).filter(
+                ProductSync.woocommerce_id == line.get("product_id"),
+                ProductSync.instance_id == instance_id
+            ).first()
             product_id = None
-            if line.get("sku"):
+            if product_sync:
+                product__sync_id = product_sync.odoo_id
+                products = client.search_read(
+                    "product.product",
+                    domain=[("id", "=", product__sync_id)],
+                    fields=["id"]
+                )
+                if products:
+                    product_id = products[0]["id"]
+            # Find product in Odoo
+
+            # find product by SKU (default_code) if SKU is provided
+            if line.get("sku") and not product_id:
                 products = client.search_read(
                     "product.product",
                     domain=[("default_code", "=", line.get("sku"))],

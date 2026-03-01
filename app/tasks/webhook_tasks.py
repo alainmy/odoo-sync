@@ -162,7 +162,7 @@ def process_webhook(
         # Process based on event type
         result = None
         
-        if event_type in ["product.created", "product.created", "product.updated", "product.update"]:
+        if event_type in ["product.created", "product.created", "product.updated", "product.update", "product.deleted"]:
             # Sync product to Odoo using instance configuration
             task_result = sync_product_to_odoo.apply_async(
                 args=[payload, instance_id],

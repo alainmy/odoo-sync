@@ -10,6 +10,9 @@ from app.constants.woocommerce import WCProductType
 from app.constants.odoo import OdooProductType
 from app.services.woocommerce.categories import manage_category_for_export
 from app.services.woocommerce.tags import manage_tags_for_export
+from app.crud.odoo import OdooClient
+from app.models.admin import WooCommerceInstance
+from app.services.pricelist_service import PricelistService
 
 __logger__ = logging.getLogger(__name__)
 
@@ -43,6 +46,41 @@ def woocommerce_type_to_odoo_type(wc_type: str) -> str:
     return OdooProductType.PRODUCT  # Default
 
 
+def manage_price_list_for_export(
+    db: Session,
+    odoo_client: OdooClient,
+    product_id: int,
+    product_tmpl_id: Optional[int],
+    instance_id: int
+) -> Optional[List[Dict[str, Any]]]:
+    """
+    Manage price list for export to WooCommerce.
+
+    Args:
+        price_list_id: Odoo price list ID
+        db: Database session for tracking
+        wcapi: WooCommerce API client
+        instance_id: WooCommerce instance ID for multi-tenancy
+    Returns:
+        List of price rules formatted for WooCommerce or None if no price list
+    """
+    instance = db.query(WooCommerceInstance).filter(
+        WooCommerceInstance.id == instance_id).first()
+    price_service = PricelistService(db)
+    if instance.price_list:
+        __logger__.info(f"Instance {instance_id} has price list configured: {instance.price_list.odoo_pricelist_id}. Calculating price for product {product_id}...")
+        price = price_service.get_odoo_product_price(
+            odoo_client=odoo_client,  # Not needed for price calculation
+            product_id=product_id,
+            product_tmpl_id=product_tmpl_id,
+            pricelist_id=instance.price_list.odoo_pricelist_id
+        )
+        __logger__.info(f"Calculated price for product {product_id} using pricelist {instance.price_list.odoo_pricelist_id}: {price}")
+        return price
+    __logger__.info(f"No price list configured for instance {instance_id}, using product list price")
+    return None
+
+
 def odoo_product_to_woocommerce(
     odoo_product: OdooProduct,
     default_status: str = "publish",
@@ -50,7 +88,8 @@ def odoo_product_to_woocommerce(
     wcapi: API = None,
     instance_id: Optional[int] = None,
     is_variable: bool = False,
-    product_attributes: Optional[List[Dict[str, Any]]] = None
+    product_attributes: Optional[List[Dict[str, Any]]] = None,
+    odoo_client: Optional[OdooClient] = None
 ) -> WooCommerceProductCreate:
     """
     Convert an Odoo product to WooCommerce format.
@@ -78,9 +117,21 @@ def odoo_product_to_woocommerce(
         odoo_product.qty_available) if odoo_product.qty_available else None
 
     # Configure price
-    regular_price = str(
-        odoo_product.list_price) if odoo_product.list_price else None
-
+    regular_price = None
+    instance = db.query(WooCommerceInstance).filter(
+        WooCommerceInstance.id == instance_id).first()
+    if instance.price_list:
+        price = manage_price_list_for_export(
+            db=db,
+            odoo_client=odoo_client,
+            product_id=odoo_product.product_variant_id or odoo_product.id,  # Use variant ID if available, otherwise template ID
+            product_tmpl_id=odoo_product.id,
+            instance_id=instance_id
+        )
+        regular_price = str(price) if price else None
+    else:
+        regular_price = str(
+            odoo_product.list_price) if odoo_product.list_price else None
     # Configure categories with automatic creation if not exists
     categories = None
     if odoo_product.categ_name:

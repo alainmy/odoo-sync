@@ -53,6 +53,7 @@ class OdooProduct(BaseModel):
     # Metadatos
     create_date: Optional[str] = None
     write_date: Optional[str] = None
+    product_variant_id: Optional[int] = None  # Para productos variables, el ID de la variante específica
     
     @field_validator('active', 'sale_ok', 'purchase_ok', mode='before')
     @classmethod

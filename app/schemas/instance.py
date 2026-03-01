@@ -23,6 +23,7 @@ class WooCommerceInstanceBase(BaseModel):
     is_active: bool = False
     odoo_language: Optional[str] = "en_US"
     product_descriptions: Optional[str] = None
+    price_list_id: Optional[int] = None
 
 
 class WooCommerceInstanceCreate(WooCommerceInstanceBase):
@@ -41,6 +42,7 @@ class WooCommerceInstanceUpdate(BaseModel):
     is_active: Optional[bool] = None
     odoo_language: Optional[str] = None
     product_descriptions: Optional[str] = None
+    price_list_id: Optional[int] = None
 
 
 class WooCommerceInstance(WooCommerceInstanceBase):

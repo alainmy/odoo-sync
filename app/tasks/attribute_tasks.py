@@ -56,24 +56,24 @@ def sync_attributes_from_odoo(
 ) -> Dict[str, Any]:
     """
     Sincronizar atributos desde Odoo hacia WooCommerce (tarea asíncrona)
-    
+
     Args:
         instance_id: ID de la instancia de WooCommerce
         attribute_ids: Lista de IDs de atributos de Odoo a sincronizar (None = todos)
         create_if_not_exists: Crear atributos nuevos en WooCommerce
         update_existing: Actualizar atributos existentes en WooCommerce
-    
+
     Returns:
         Diccionario con resultados de la sincronización
     """
     db = self.db
-    
+
     try:
         # Obtener instancia
         instance = get_instance_by_id(db, instance_id)
         if not instance:
             raise ValueError(f"Instancia {instance_id} no encontrada")
-        
+
         # Conectar a Odoo
         odoo_client = OdooClient(
             url=instance.odoo_url,
@@ -81,18 +81,19 @@ def sync_attributes_from_odoo(
             username=instance.odoo_username,
             password=instance.odoo_password
         )
-        
+
         uid = asyncio.run(odoo_client.odoo_authenticate())
         if not uid:
             raise ValueError("No se pudo autenticar con Odoo")
-        
+
         # Obtener atributos de Odoo
         if attribute_ids:
             # Obtener atributos específicos
             odoo_attributes = []
             for attr_id in attribute_ids:
                 try:
-                    attr = asyncio.run(get_odoo_attribute_by_id(odoo_client, attr_id))
+                    attr = asyncio.run(
+                        get_odoo_attribute_by_id(odoo_client, attr_id))
                     if attr:
                         odoo_attributes.append(attr)
                 except Exception as e:
@@ -102,7 +103,7 @@ def sync_attributes_from_odoo(
             odoo_attributes = asyncio.run(
                 get_odoo_attributes(odoo_client, limit=500, offset=0)
             )
-        
+
         if not odoo_attributes:
             return {
                 "success": True,
@@ -112,12 +113,12 @@ def sync_attributes_from_odoo(
                 "errors": 0,
                 "results": []
             }
-        
+
         # Sincronizar cada atributo
         results = []
         synced_count = 0
         error_count = 0
-        
+
         for odoo_attribute in odoo_attributes:
             try:
                 # Crear/actualizar atributo en WooCommerce
@@ -130,14 +131,14 @@ def sync_attributes_from_odoo(
                         update_existing=update_existing
                     )
                 )
-                
+
                 results.append(attribute_result.dict())
-                
+
                 if not attribute_result.success:
                     error_count += 1
                 elif attribute_result.action in ["created", "updated"]:
                     synced_count += 1
-                    
+
                     # Sincronizar valores del atributo
                     if attribute_result.woocommerce_id:
                         try:
@@ -149,7 +150,7 @@ def sync_attributes_from_odoo(
                                     db=db
                                 )
                             )
-                            
+
                             # Agregar resultados de valores
                             for value_result in value_results:
                                 results.append({
@@ -161,16 +162,17 @@ def sync_attributes_from_odoo(
                             logger.error(
                                 f"Error sincronizando valores del atributo {odoo_attribute.id}: {e}"
                             )
-                
+
             except Exception as e:
-                logger.error(f"Error sincronizando atributo {odoo_attribute.id}: {e}")
+                logger.error(
+                    f"Error sincronizando atributo {odoo_attribute.id}: {e}")
                 error_count += 1
                 results.append({
                     "odoo_attribute_id": odoo_attribute.id,
                     "error": True,
                     "message": f"Error: {str(e)}"
                 })
-        
+
         return {
             "success": True,
             "message": f"Sincronizados {synced_count} atributos, {error_count} errores",
@@ -179,7 +181,7 @@ def sync_attributes_from_odoo(
             "errors": error_count,
             "results": results
         }
-        
+
     except Exception as e:
         logger.error(f"Error en sincronización de atributos: {e}")
         return {
@@ -210,18 +212,18 @@ def sync_single_attribute(
 ) -> Dict[str, Any]:
     """
     Sincronizar un solo atributo desde Odoo hacia WooCommerce
-    
+
     Args:
         instance_id: ID de la instancia de WooCommerce
         odoo_attribute_id: ID del atributo en Odoo
         create_if_not_exists: Crear si no existe en WooCommerce
         update_existing: Actualizar si ya existe en WooCommerce
-    
+
     Returns:
         Resultado de la sincronización
     """
     db = self.db
-    
+
     try:
         # Obtener instancia
         instance = get_instance_by_id(db, instance_id)
@@ -230,27 +232,30 @@ def sync_single_attribute(
             wcapi = get_wc_api_from_instance_config(wc_config)
         if not instance:
             raise ValueError(f"Instancia {instance_id} no encontrada")
-        
+
         # Conectar a Odoo
         odoo_client = OdooClient(
             url=odoo_config.get("url") if odoo_config else instance.odoo_url,
             db=odoo_config.get("db") if odoo_config else instance.odoo_db,
-            username=odoo_config.get("username") if odoo_config else instance.odoo_username,
-            password=odoo_config.get("password") if odoo_config else instance.odoo_password
+            username=odoo_config.get(
+                "username") if odoo_config else instance.odoo_username,
+            password=odoo_config.get(
+                "password") if odoo_config else instance.odoo_password
         )
-        
+
         uid = asyncio.run(odoo_client.odoo_authenticate())
         if not uid:
             raise ValueError("No se pudo autenticar con Odoo")
-        
+
         # Obtener atributo de Odoo
         odoo_attribute = asyncio.run(
             get_odoo_attribute_by_id(odoo_client, odoo_attribute_id)
         )
-        
+
         if not odoo_attribute:
-            raise ValueError(f"Atributo {odoo_attribute_id} no encontrado en Odoo")
-        
+            raise ValueError(
+                f"Atributo {odoo_attribute_id} no encontrado en Odoo")
+
         # Sincronizar atributo a WooCommerce
         attribute_result = asyncio.run(
             create_or_update_woocommerce_attribute(
@@ -262,7 +267,7 @@ def sync_single_attribute(
                 wcapi=wcapi
             )
         )
-        
+
         # Sincronizar valores del atributo
         value_results = []
         if attribute_result.woocommerce_id and attribute_result.success:
@@ -274,14 +279,14 @@ def sync_single_attribute(
                     db=db
                 )
             )
-        
+
         return {
             "success": attribute_result.success,
             "attribute": attribute_result.dict(),
             "values": [v.dict() for v in value_results],
             "message": attribute_result.message
         }
-        
+
     except Exception as e:
         logger.error(f"Error sincronizando atributo {odoo_attribute_id}: {e}")
         return {
@@ -300,23 +305,23 @@ def sync_single_attribute(
 def get_attribute_sync_status(self, instance_id: int, odoo_attribute_id: int) -> Dict[str, Any]:
     """
     Obtener estado de sincronización de un atributo
-    
+
     Args:
         instance_id: ID de la instancia
         odoo_attribute_id: ID del atributo en Odoo
-    
+
     Returns:
         Estado de sincronización
     """
     db = self.db
     repository = AttributeSyncRepository(db)
-    
+
     try:
         sync = repository.get_attribute_sync_by_odoo_id(
             instance_id=instance_id,
             odoo_attribute_id=odoo_attribute_id
         )
-        
+
         if sync:
             return {
                 "found": True,

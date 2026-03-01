@@ -123,7 +123,8 @@ class OdooClient:
                          domain=None,
                          fields=None,
                          limit=100,
-                         offset=0):
+                         offset=0,
+                         order="id asc"):
         """Versión síncrona de search_read para usar en contextos no async."""
         payload = {
             "jsonrpc": "2.0",
@@ -143,7 +144,7 @@ class OdooClient:
                                              "description", "image_1920"],
                         "offset": limit * offset,
                         "limit": limit,
-                        "order": "id asc",
+                        "order": order,
                         "context": self.context
                     }
                 ],

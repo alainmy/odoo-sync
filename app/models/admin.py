@@ -22,7 +22,9 @@ class CategorySync(Base):
 
     # Relación con instancia
     instance_id = Column(Integer, ForeignKey(
-        "woocommerce_instances.id"), nullable=True, index=True)
+        "woocommerce_instances.id"), 
+                         onupdate="CASCADE",
+                         nullable=True, index=True)
 
     # Status flags
     created = Column(Boolean, default=False)
@@ -57,7 +59,9 @@ class TagSync(Base):
 
     # Relación con instancia
     instance_id = Column(Integer, ForeignKey(
-        "woocommerce_instances.id"), nullable=True, index=True)
+        "woocommerce_instances.id"),
+                         onupdate="CASCADE",
+                         nullable=True, index=True)
 
     # Status flags
     created = Column(Boolean, default=False)
@@ -92,7 +96,9 @@ class ProductSync(Base):
     odoo_name = Column(String(255), index=True)
     # Relación con instancia
     instance_id = Column(Integer, ForeignKey(
-        "woocommerce_instances.id"), nullable=True, index=True)
+        "woocommerce_instances.id"), 
+                         onupdate="CASCADE",
+                         nullable=True, index=True)
 
     # Status flags
     created = Column(Boolean, default=False)
@@ -137,7 +143,9 @@ class WebhookLog(Base):
 
     # Relación con instancia
     instance_id = Column(Integer, ForeignKey(
-        "woocommerce_instances.id"), nullable=True, index=True)
+        "woocommerce_instances.id"),
+                         onupdate="CASCADE",
+                         nullable=True, index=True)
 
     # SHA256 hash of payload for deduplication
     payload_hash = Column(String(64), index=True)
@@ -165,7 +173,10 @@ class CeleryTaskLog(Base):
 
     # Relación con instancia
     instance_id = Column(Integer, ForeignKey(
-        "woocommerce_instances.id"), nullable=True, index=True)
+        "woocommerce_instances.id"), 
+                         nullable=True, 
+                         index=True,
+                         onupdate="CASCADE")
 
     task_args = Column(JSON)
     task_kwargs = Column(JSON)
@@ -221,3 +232,10 @@ class WooCommerceInstance(Base):
     odoo_language = Column(String(10), default="en_US")
 
     product_descriptions = Column(String(20), default="product_description")
+
+    # Price list
+    price_list_id = Column(Integer, ForeignKey(
+        "pricelist_sync.id"), nullable=True, index=True)
+    
+    price_list = relationship("PricelistSync",
+                              back_populates="instances")
