@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean
+from sqlalchemy import Column, ForeignKey, Integer, String, Boolean
 from app.db.base import Base
 
 
@@ -24,3 +24,6 @@ class ClientSync(Base):
     name = Column(String(255), nullable=False)
     last_name = Column(String(255), nullable=True)
     last_synced_at = Column(String(255), nullable=True)
+    contact_type = Column(String(20), nullable=True)
+    parent_id = Column(ForeignKey("client_sync.id"), nullable=True)
+    sync_status = Column(String(20), nullable=True)

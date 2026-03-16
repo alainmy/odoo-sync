@@ -30,8 +30,8 @@ class AttributeSync(Base):
 
     # Relación con instancia WooCommerce
     instance_id = Column(Integer,
-                         ForeignKey('woocommerce_instances.id'),
-                         onupdate="CASCADE",
+                         ForeignKey('woocommerce_instances.id',
+                                    ondelete='CASCADE'),
                          nullable=False, index=True)
 
     # IDs de sincronización
@@ -87,8 +87,8 @@ class AttributeValueSync(Base):
 
     # Relación con instancia WooCommerce
     instance_id = Column(Integer,
-                         ForeignKey('woocommerce_instances.id'),
-                         onupdate="CASCADE",
+                         ForeignKey('woocommerce_instances.id',
+                                    ondelete='CASCADE'),
                          nullable=False, index=True)
 
     # IDs de sincronización

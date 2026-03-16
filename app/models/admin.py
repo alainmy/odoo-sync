@@ -22,9 +22,8 @@ class CategorySync(Base):
 
     # Relación con instancia
     instance_id = Column(Integer, ForeignKey(
-        "woocommerce_instances.id"), 
-                         onupdate="CASCADE",
-                         nullable=True, index=True)
+        "woocommerce_instances.id", ondelete="CASCADE"),
+        nullable=True, index=True)
 
     # Status flags
     created = Column(Boolean, default=False)
@@ -59,9 +58,8 @@ class TagSync(Base):
 
     # Relación con instancia
     instance_id = Column(Integer, ForeignKey(
-        "woocommerce_instances.id"),
-                         onupdate="CASCADE",
-                         nullable=True, index=True)
+        "woocommerce_instances.id", ondelete="CASCADE"),
+        nullable=True, index=True)
 
     # Status flags
     created = Column(Boolean, default=False)
@@ -96,9 +94,53 @@ class ProductSync(Base):
     odoo_name = Column(String(255), index=True)
     # Relación con instancia
     instance_id = Column(Integer, ForeignKey(
-        "woocommerce_instances.id"), 
-                         onupdate="CASCADE",
-                         nullable=True, index=True)
+        "woocommerce_instances.id", ondelete="CASCADE"),
+        nullable=True, index=True)
+
+    # Status flags
+    created = Column(Boolean, default=False)
+    updated = Column(Boolean, default=False)
+    skipped = Column(Boolean, default=False)
+    error = Column(Boolean, default=False)
+    published = Column(Boolean, default=False)  # WooCommerce publish status
+    needs_sync = Column(Boolean, default=False)  # Pending sync flag
+
+    # Messages
+    message = Column(String(500), index=True)
+    error_details = Column(String(500), index=True)
+
+    # Timestamps - inspired by ks.woo.product.template
+    wc_date_created = Column(DateTime(timezone=True),
+                             nullable=True)  # WC creation date
+    wc_date_updated = Column(DateTime(timezone=True),
+                             nullable=True)  # WC update date
+    odoo_write_date = Column(DateTime(timezone=True),
+                             nullable=True)  # Odoo last modification
+    # Last modification date
+    sync_date = Column(DateTime(timezone=True), nullable=True)
+    last_synced_at = Column(DateTime(timezone=True),
+                            nullable=True)  # Last successful sync
+
+    # Audit timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    variants = relationship('ProductVariantSync')
+
+
+class ProductVariantSync(Base):
+    __tablename__ = "product_variant_sync"
+
+    id = Column(Integer, primary_key=True, index=True)
+    odoo_id = Column(Integer, index=True)
+    woocommerce_id = Column(Integer, index=True)
+    odoo_name = Column(String(255), index=True)
+    # Relación con instancia
+    instance_id = Column(Integer, ForeignKey(
+        "woocommerce_instances.id", ondelete="CASCADE"),
+        nullable=True, index=True)
+    product_tpl_id = Column(Integer, ForeignKey(
+        "product_sync.id", ondelete="CASCADE"),
+        nullable=True, index=True)
 
     # Status flags
     created = Column(Boolean, default=False)
@@ -128,6 +170,9 @@ class ProductSync(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
+    product_tpl = relationship(
+        "ProductSync", back_populates="variants")
+
 
 class WebhookLog(Base):
     """
@@ -143,9 +188,8 @@ class WebhookLog(Base):
 
     # Relación con instancia
     instance_id = Column(Integer, ForeignKey(
-        "woocommerce_instances.id"),
-                         onupdate="CASCADE",
-                         nullable=True, index=True)
+        "woocommerce_instances.id", ondelete="CASCADE"),
+        nullable=True, index=True)
 
     # SHA256 hash of payload for deduplication
     payload_hash = Column(String(64), index=True)
@@ -173,10 +217,9 @@ class CeleryTaskLog(Base):
 
     # Relación con instancia
     instance_id = Column(Integer, ForeignKey(
-        "woocommerce_instances.id"), 
-                         nullable=True, 
-                         index=True,
-                         onupdate="CASCADE")
+        "woocommerce_instances.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True)
 
     task_args = Column(JSON)
     task_kwargs = Column(JSON)
@@ -236,6 +279,6 @@ class WooCommerceInstance(Base):
     # Price list
     price_list_id = Column(Integer, ForeignKey(
         "pricelist_sync.id"), nullable=True, index=True)
-    
+
     price_list = relationship("PricelistSync",
                               back_populates="instances")

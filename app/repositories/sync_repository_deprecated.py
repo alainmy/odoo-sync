@@ -20,12 +20,12 @@ logger = logging.getLogger(__name__)
 
 class SyncRepository:
     """Repository for sync operations."""
-    
+
     def __init__(self, db: Session):
         self.db = db
-    
+
     # ==================== Product Sync ====================
-    
+
     def create_product_sync(
         self,
         odoo_id: int,
@@ -54,35 +54,36 @@ class SyncRepository:
         self.db.commit()
         self.db.refresh(sync)
         return sync
-    
+
     def get_product_sync_by_odoo_id(self, odoo_id: int, instance_id: int) -> Optional[ProductSync]:
         """Get product sync record by Odoo ID."""
         return self.db.query(ProductSync).filter(
             ProductSync.odoo_id == odoo_id,
             ProductSync.instance_id == instance_id
         ).first()
-    
+
     def get_product_sync_by_wc_id(self, wc_id: int, instance_id: int) -> Optional[ProductSync]:
         """Get product sync record by WooCommerce ID."""
         return self.db.query(ProductSync).filter(
             ProductSync.woocommerce_id == wc_id,
             ProductSync.instance_id == instance_id
         ).first()
-    
+
     def update_product_sync(
         self,
         sync_id: int,
         **kwargs
     ) -> Optional[ProductSync]:
         """Update product sync record."""
-        sync = self.db.query(ProductSync).filter(ProductSync.id == sync_id).first()
+        sync = self.db.query(ProductSync).filter(
+            ProductSync.id == sync_id).first()
         if sync:
             for key, value in kwargs.items():
                 setattr(sync, key, value)
             self.db.commit()
             self.db.refresh(sync)
         return sync
-    
+
     def get_product_sync_statistics(
         self,
         instance_id: int,
@@ -93,16 +94,16 @@ class SyncRepository:
         query = self.db.query(ProductSync).filter(
             ProductSync.instance_id == instance_id
         )
-        
+
         # Note: ProductSync doesn't have timestamp fields in current model
         # You may want to add created_at/updated_at fields
-        
+
         total = query.count()
         created = query.filter(ProductSync.created == True).count()
         updated = query.filter(ProductSync.updated == True).count()
         skipped = query.filter(ProductSync.skipped == True).count()
         errors = query.filter(ProductSync.error == True).count()
-        
+
         return {
             "total": total,
             "created": created,
@@ -110,7 +111,7 @@ class SyncRepository:
             "skipped": skipped,
             "errors": errors
         }
-    
+
     def get_product_syncs(
         self,
         instance_id: int,
@@ -122,14 +123,14 @@ class SyncRepository:
         query = self.db.query(ProductSync).filter(
             ProductSync.instance_id == instance_id
         )
-        
+
         if error is not None:
             query = query.filter(ProductSync.error == error)
-        
+
         return query.order_by(ProductSync.id.desc()).offset(offset).limit(limit).all()
-    
+
     # ==================== Category Sync ====================
-    
+
     def create_category_sync(
         self,
         odoo_id: int,
@@ -158,14 +159,14 @@ class SyncRepository:
         self.db.commit()
         self.db.refresh(sync)
         return sync
-    
+
     def get_category_sync_by_odoo_id(self, odoo_id: int, instance_id: int) -> Optional[CategorySync]:
         """Get category sync record by Odoo ID."""
         return self.db.query(CategorySync).filter(
             CategorySync.odoo_id == odoo_id,
             CategorySync.instance_id == instance_id
         ).first()
-    
+
     def get_category_syncs(
         self,
         instance_id: int,
@@ -177,20 +178,25 @@ class SyncRepository:
         query = self.db.query(CategorySync).filter(
             CategorySync.instance_id == instance_id
         )
-        
+
         if error is not None:
             query = query.filter(CategorySync.error == error)
-        
+
         return query.order_by(CategorySync.id.desc()).offset(offset).limit(limit).all()
-    
+
     def get_category_sync_stats(self, instance_id: int) -> Dict[str, int]:
         """Get category sync statistics."""
-        total = self.db.query(CategorySync).filter(CategorySync.instance_id == instance_id).count()
-        created = self.db.query(CategorySync).filter(CategorySync.instance_id == instance_id, CategorySync.created == True).count()
-        updated = self.db.query(CategorySync).filter(CategorySync.instance_id == instance_id, CategorySync.updated == True).count()
-        skipped = self.db.query(CategorySync).filter(CategorySync.instance_id == instance_id, CategorySync.skipped == True).count()
-        errors = self.db.query(CategorySync).filter(CategorySync.instance_id == instance_id, CategorySync.error == True).count()
-        
+        total = self.db.query(CategorySync).filter(
+            CategorySync.instance_id == instance_id).count()
+        created = self.db.query(CategorySync).filter(
+            CategorySync.instance_id == instance_id, CategorySync.created == True).count()
+        updated = self.db.query(CategorySync).filter(
+            CategorySync.instance_id == instance_id, CategorySync.updated == True).count()
+        skipped = self.db.query(CategorySync).filter(
+            CategorySync.instance_id == instance_id, CategorySync.skipped == True).count()
+        errors = self.db.query(CategorySync).filter(
+            CategorySync.instance_id == instance_id, CategorySync.error == True).count()
+
         return {
             "total": total,
             "created": created,
@@ -198,9 +204,9 @@ class SyncRepository:
             "skipped": skipped,
             "errors": errors
         }
-    
+
     # ==================== Tag Sync ====================
-    
+
     def create_tag_sync(
         self,
         odoo_id: int,
@@ -229,14 +235,14 @@ class SyncRepository:
         self.db.commit()
         self.db.refresh(sync)
         return sync
-    
+
     def get_tag_sync_by_odoo_id(self, odoo_id: int, instance_id: int) -> Optional[TagSync]:
         """Get tag sync record by Odoo ID."""
         return self.db.query(TagSync).filter(
             TagSync.odoo_id == odoo_id,
             TagSync.instance_id == instance_id
         ).first()
-    
+
     def get_tag_syncs(
         self,
         instance_id: int,
@@ -248,20 +254,25 @@ class SyncRepository:
         query = self.db.query(TagSync).filter(
             TagSync.instance_id == instance_id
         )
-        
+
         if error is not None:
             query = query.filter(TagSync.error == error)
-        
+
         return query.order_by(TagSync.id.desc()).offset(offset).limit(limit).all()
-    
+
     def get_tag_sync_stats(self, instance_id: int) -> Dict[str, int]:
         """Get tag sync statistics."""
-        total = self.db.query(TagSync).filter(TagSync.instance_id == instance_id).count()
-        created = self.db.query(TagSync).filter(TagSync.instance_id == instance_id, TagSync.created == True).count()
-        updated = self.db.query(TagSync).filter(TagSync.instance_id == instance_id, TagSync.updated == True).count()
-        skipped = self.db.query(TagSync).filter(TagSync.instance_id == instance_id, TagSync.skipped == True).count()
-        errors = self.db.query(TagSync).filter(TagSync.instance_id == instance_id, TagSync.error == True).count()
-        
+        total = self.db.query(TagSync).filter(
+            TagSync.instance_id == instance_id).count()
+        created = self.db.query(TagSync).filter(
+            TagSync.instance_id == instance_id, TagSync.created == True).count()
+        updated = self.db.query(TagSync).filter(
+            TagSync.instance_id == instance_id, TagSync.updated == True).count()
+        skipped = self.db.query(TagSync).filter(
+            TagSync.instance_id == instance_id, TagSync.skipped == True).count()
+        errors = self.db.query(TagSync).filter(
+            TagSync.instance_id == instance_id, TagSync.error == True).count()
+
         return {
             "total": total,
             "created": created,
@@ -269,9 +280,9 @@ class SyncRepository:
             "skipped": skipped,
             "errors": errors
         }
-    
+
     # ==================== Webhook Logs ====================
-    
+
     def create_webhook_log(
         self,
         event_id: str,
@@ -294,13 +305,13 @@ class SyncRepository:
         self.db.commit()
         self.db.refresh(log)
         return log
-    
+
     def get_webhook_log_by_event_id(self, event_id: str) -> Optional[WebhookLog]:
         """Get webhook log by event ID."""
         return self.db.query(WebhookLog).filter(
             WebhookLog.event_id == event_id
         ).first()
-    
+
     def get_webhook_logs(
         self,
         instance_id: int,
@@ -313,14 +324,14 @@ class SyncRepository:
         query = self.db.query(WebhookLog).filter(
             WebhookLog.instance_id == instance_id
         )
-        
+
         if status:
             query = query.filter(WebhookLog.status == status)
         if event_type:
             query = query.filter(WebhookLog.event_type == event_type)
-        
+
         return query.order_by(WebhookLog.created_at.desc()).offset(offset).limit(limit).all()
-    
+
     def update_webhook_log(
         self,
         event_id: str,
@@ -340,7 +351,7 @@ class SyncRepository:
             self.db.commit()
             self.db.refresh(log)
         return log
-    
+
     def get_webhook_statistics(
         self,
         instance_id: int,
@@ -351,17 +362,17 @@ class SyncRepository:
         query = self.db.query(WebhookLog).filter(
             WebhookLog.instance_id == instance_id
         )
-        
+
         if start_date:
             query = query.filter(WebhookLog.created_at >= start_date)
         if end_date:
             query = query.filter(WebhookLog.created_at <= end_date)
-        
+
         total = query.count()
         completed = query.filter(WebhookLog.status == "completed").count()
         failed = query.filter(WebhookLog.status == "failed").count()
         pending = query.filter(WebhookLog.status == "pending").count()
-        
+
         # Get event type breakdown
         event_types = self.db.query(
             WebhookLog.event_type,
@@ -373,7 +384,7 @@ class SyncRepository:
                 WebhookLog.created_at <= end_date if end_date else True
             )
         ).group_by(WebhookLog.event_type).all()
-        
+
         return {
             "total": total,
             "completed": completed,
@@ -381,9 +392,9 @@ class SyncRepository:
             "pending": pending,
             "event_types": {event_type: count for event_type, count in event_types}
         }
-    
+
     # ==================== Celery Task Logs ====================
-    
+
     def create_task_log(
         self,
         task_id: str,
@@ -406,13 +417,13 @@ class SyncRepository:
         self.db.commit()
         self.db.refresh(log)
         return log
-    
+
     def get_task_log(self, task_id: str) -> Optional[CeleryTaskLog]:
         """Get task log by task ID."""
         return self.db.query(CeleryTaskLog).filter(
             CeleryTaskLog.task_id == task_id
         ).first()
-    
+
     def update_task_log(
         self,
         task_id: str,
@@ -438,7 +449,7 @@ class SyncRepository:
             self.db.commit()
             self.db.refresh(log)
         return log
-    
+
     def get_task_logs(
         self,
         instance_id: int,
@@ -451,16 +462,16 @@ class SyncRepository:
         query = self.db.query(CeleryTaskLog).filter(
             CeleryTaskLog.instance_id == instance_id
         )
-        
+
         if status:
             query = query.filter(CeleryTaskLog.status == status)
         if task_name:
             query = query.filter(CeleryTaskLog.task_name == task_name)
-        
+
         return query.order_by(CeleryTaskLog.id.desc()).offset(offset).limit(limit).all()
-    
+
     # ==================== WooCommerce Instances ====================
-    
+
     def create_instance(
         self,
         name: str,
@@ -483,31 +494,31 @@ class SyncRepository:
         self.db.commit()
         self.db.refresh(instance)
         return instance
-    
+
     def get_instance(self, instance_id: int) -> Optional[WooCommerceInstance]:
         """Get WooCommerce instance by ID."""
         return self.db.query(WooCommerceInstance).filter(
             WooCommerceInstance.id == instance_id
         ).first()
-    
+
     def get_instance_by_name(self, name: str) -> Optional[WooCommerceInstance]:
         """Get WooCommerce instance by name."""
         return self.db.query(WooCommerceInstance).filter(
             WooCommerceInstance.name == name
         ).first()
-    
+
     def get_active_instances(self) -> List[WooCommerceInstance]:
         """Get all active WooCommerce instances."""
         return self.db.query(WooCommerceInstance).filter(
             WooCommerceInstance.is_active == True
         ).all()
-    
+
     def get_all_instances(self) -> List[WooCommerceInstance]:
         """Get all WooCommerce instances."""
         return self.db.query(WooCommerceInstance).all()
-    
+
     # ==================== Sync Management ====================
-    
+
     def get_products_with_sync_status(
         self,
         odoo_products: List[Dict],
@@ -516,39 +527,39 @@ class SyncRepository:
     ) -> Tuple[List[Dict], int]:
         """
         Enrich Odoo products with sync status from ProductSync table.
-        
+
         Args:
             odoo_products: List of products from Odoo search_read
             instance_id: WooCommerce instance ID
             filter_status: Filter by status (never_synced, synced, modified, error)
-            
+
         Returns:
             Tuple of (enriched_products, total_count)
         """
         if not odoo_products:
             return [], 0
-        
+
         # Extract odoo_ids
         odoo_ids = [p["id"] for p in odoo_products]
-        
+
         # Bulk fetch ProductSync records
         sync_records = self.db.query(ProductSync).filter(
             ProductSync.odoo_id.in_(odoo_ids),
             ProductSync.instance_id == instance_id
         ).all()
-        
+
         # Create lookup map
         sync_map = {s.odoo_id: s for s in sync_records}
-        
+
         enriched = []
         for product in odoo_products:
             sync_record = sync_map.get(product["id"])
             sync_status = self._calculate_sync_status(product, sync_record)
-            
+
             # Apply filter
             if filter_status and sync_status != filter_status:
                 continue
-            
+
             enriched.append({
                 "odoo_id": product["id"],
                 "name": product.get("name", ""),
@@ -563,68 +574,69 @@ class SyncRepository:
                 "has_error": sync_record.error if sync_record else False,
                 "error_message": sync_record.message if sync_record and sync_record.error else None
             })
-        
+
         return enriched, len(enriched)
-    
+
     def _calculate_sync_status(
-        self, 
-        odoo_product: dict, 
+        self,
+        odoo_product: dict,
         sync: Optional[ProductSync]
     ) -> str:
         """
         Calculate sync status based on timestamps and flags.
-        
+
         Returns: "never_synced", "synced", "modified", "error"
         """
         # No sync record = never synced
         if not sync:
             return "never_synced"
-        
+
         # Error state takes precedence
         if sync.error:
             return "error"
-        
+
         # Never synced if no last_synced_at
         if not sync.last_synced_at:
             return "never_synced"
-        
+
         # Compare Odoo write_date with last_synced_at
         try:
             odoo_write_date_str = odoo_product.get("write_date")
             if not odoo_write_date_str:
                 return "synced"
-            
+
             # Parse Odoo datetime string (format: "2024-01-15 10:30:45")
             odoo_write_dt = datetime.fromisoformat(
                 odoo_write_date_str.replace(" ", "T")
             )
-            
+
             # Make timezone-aware if needed
             if odoo_write_dt.tzinfo is None:
                 from datetime import timezone
                 odoo_write_dt = odoo_write_dt.replace(tzinfo=timezone.utc)
-            
+
             last_synced = sync.last_synced_at
             if last_synced.tzinfo is None:
                 from datetime import timezone
                 last_synced = last_synced.replace(tzinfo=timezone.utc)
-            
+
             # If Odoo modified after last sync = modified
             # Use 10-second tolerance like ks_woocommerce
             tolerance = timedelta(seconds=10)
             if odoo_write_dt > (last_synced + tolerance):
                 return "modified"
-            
+
         except (ValueError, AttributeError) as e:
-            logger.warning(f"Error parsing dates for product {odoo_product.get('id')}: {e}")
+            logger.warning(
+                f"Error parsing dates for product {odoo_product.get('id')}: {e}")
             return "synced"
-        
+
         return "synced"
-    
+
     def mark_products_for_sync(self, odoo_ids: List[int], instance_id: int) -> int:
         """
         Bulk update needs_sync flag to True for given Odoo IDs.
-        
+
         Returns: Number of records updated
         """
         count = self.db.query(ProductSync).filter(
@@ -633,7 +645,7 @@ class SyncRepository:
         ).update({"needs_sync": True}, synchronize_session=False)
         self.db.commit()
         return count
-    
+
     def get_products_needing_sync(
         self,
         instance_id: int,
@@ -644,7 +656,7 @@ class SyncRepository:
             ProductSync.needs_sync == True,
             ProductSync.instance_id == instance_id
         ).limit(limit).all()
-    
+
     def update_product_sync_timestamps(
         self,
         odoo_id: int,
@@ -660,7 +672,7 @@ class SyncRepository:
     ) -> Optional[ProductSync]:
         """Update sync record with timestamps after successful sync. Creates record if doesn't exist."""
         sync = self.get_product_sync_by_odoo_id(odoo_id, instance_id)
-        
+
         if sync:
             # Update existing record
             if wc_id is not None:
@@ -680,7 +692,7 @@ class SyncRepository:
                 sync.message = message
             sync.needs_sync = needs_sync
             sync.error = False  # Clear error on successful sync
-            
+
             self.db.commit()
             self.db.refresh(sync)
         else:
@@ -702,7 +714,7 @@ class SyncRepository:
             self.db.add(sync)
             self.db.commit()
             self.db.refresh(sync)
-        
+
         return sync
 
 

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.services.woocommerce import wc_request, wc_request_with_logging
 from app.repositories.attribute_repository import AttributeSyncRepository
-from app.models.admin import WooCommerceInstance
+from app.models.admin import ProductSync, ProductVariantSync, WooCommerceInstance
 from app.services.woocommerce.converters import manage_price_list_for_export
 
 _logger = logging.getLogger(__name__)
@@ -373,6 +373,24 @@ async def sync_product_variations(
                             params=wc_variation_data,
                             wcapi=wcapi
                         )
+                        variant_sync = db.query(ProductVariantSync).filter(
+                            ProductVariantSync.woocommerce_id == variant_exist.get(
+                                'id'),
+                            ProductVariantSync.instance_id == instance_id
+                        ).first()
+                        if not variant_sync:
+                            product_tmpl_sync = db.query(ProductSync).filter(
+                                ProductSync.odoo_id == product_tmpl_id
+                            ).first()
+                            variant_sync = ProductVariantSync(
+                                odoo_id=variant_id,
+                                woocommerce_id=response["id"],
+                                instance_id=instance_id,
+                                product_tpl_id=product_tmpl_sync.id if product_tmpl_sync else None
+                            )
+                            db.add(variant_sync)
+                            db.commit()
+                            db.refresh(variant_sync)
                         updated_count = updated_count + 1
                         _logger.info(f"Variant update response: {response}")
                 _logger.info(f"Variant exist: {variant_exist}")
@@ -398,6 +416,20 @@ async def sync_product_variations(
                             "success": True,
                             "message": f"Variation created with ID {response['id']}"
                         })
+                        # Create in sync
+                        product_tmpl_sync = db.query(ProductSync).filter(
+                            ProductSync.odoo_id == product_tmpl_id
+                        ).first()
+                        variant_sync = ProductVariantSync(
+                            odoo_id=variant_id,
+                            woocommerce_id=response["id"],
+                            instance_id=instance_id,
+                            product_tpl_id=product_tmpl_sync.id if product_tmpl_sync else None
+                        )
+                        db.add(variant_sync)
+                        db.commit()
+                        db.refresh(variant_sync)
+                        # Create la variante
                         _logger.info(
                             f"Variation {sku} created: WC ID {response['id']}")
                     else:

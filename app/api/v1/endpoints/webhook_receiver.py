@@ -142,8 +142,8 @@ async def receive_woocommerce_webhook(
                 )
             
             logger.info("Webhook signature validated successfully")
-        elif not instance.webhook_secret:
-            logger.warning(f"No webhook secret configured for instance {instance_id}")
+        # elif not instance.webhook_secret:
+        #     logger.warning(f"No webhook secret configured for instance {instance_id}")
         
         # Check for duplicate events
         event_id = x_wc_webhook_delivery_id or f"{x_wc_webhook_id}_{payload.get('id')}"

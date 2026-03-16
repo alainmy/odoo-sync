@@ -99,7 +99,7 @@ def create_webhook_config(
         )
 
     # Create webhook in local database
-    config.delivery_url = settings.fast_api_host + \
+    config.delivery_url = settings.webhook_url + \
         f"/api/v1/webhook-receiver/wc/{config.instance_id}/{config.topic}"
     new_webhook = repo.create(config)
     if not new_webhook:

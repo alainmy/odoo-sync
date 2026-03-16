@@ -7,6 +7,7 @@ Flujo:
 3. Guardar mapeo en AttributeSync + AttributeValueSync
 """
 import logging
+import re
 from typing import Dict, Optional, List
 from sqlalchemy.engine import create
 from sqlalchemy.orm import Session
@@ -45,7 +46,7 @@ async def get_attribute_by_id(
             "GET", f"products/attributes/{wc_attribute_id}", wcapi=wcapi)
         if isinstance(attr, dict):
             return attr
-        return None
+        return attr
     except Exception as e:
         _logger.error(
             f"Error fetching WooCommerce attribute ID {wc_attribute_id}: {e}")
@@ -112,6 +113,13 @@ async def get_attribute_terms_by_slug(
         return None
 
 
+def normalize_slug(text):
+    return re.sub(r'[áàâäãå]', 'a', 
+           re.sub(r'[éèêë]', 'e',
+           re.sub(r'[íìîï]', 'i',
+           re.sub(r'[óòôöõ]', 'o',
+           re.sub(r'[úùûü]', 'u', text.lower())))))
+
 async def create_or_update_woocommerce_attribute(
     odoo_attribute: OdooAttribute,
     instance_id: int,
@@ -144,77 +152,65 @@ async def create_or_update_woocommerce_attribute(
             odoo_attribute.id,
             instance_id
         )
-        _logger.info(f"Existing sync record: {existing_sync}")
+        _logger.info(f"Existing sync record: {existing_sync.odoo_attribute_id if existing_sync else 'None'}")
+        _logger.info(f"Existing sync record: {existing_sync.woocommerce_id if existing_sync else 'None'}")
         # 2. Buscar en WooCommerce (defensivo)
         # WooCommerce genera slug con prefijo 'pa_'
         slug_formated = odoo_attribute.name.lower().replace(" ", "-")
         _logger.info(f"Formatted slug for attribute: {slug_formated}")
         slug = 'pa_' + slug_formated
+        slug_normalized = normalize_slug(slug)
         _logger.info(f"Final slug for WooCommerce attribute: {slug}")
         original_slug = slug_formated  # Guardar para mensajes
         wc_attribute = None
-        
+
         # Si existe sync, intentar buscar por ID guardado
         if existing_sync and existing_sync.woocommerce_id:
             try:
                 wc_attribute = await get_attribute_by_id(existing_sync.woocommerce_id, wcapi=wcapi)
                 _logger.info(f"Checking attribute existing: {wc_attribute}")
                 if wc_attribute:
-                    _logger.debug(f"Found attribute by sync ID: {existing_sync.woocommerce_id}")
+                    _logger.debug(
+                        f"Found attribute by sync ID: {existing_sync.woocommerce_id}")
             except Exception as e:
-                _logger.warning(f"Attribute ID {existing_sync.woocommerce_id} not found in WC, will search by slug: {e}")
+                _logger.warning(
+                    f"Attribute ID {existing_sync.woocommerce_id} not found in WC, will search by slug: {e}")
         _logger.info(f"WC Attribute after checking by ID: {wc_attribute}")
         # Si no se encontró por ID, buscar por slug
-        if not wc_attribute:
-            try:
-                attrs = wc_request_with_logging(
-                    "GET",
-                    "products/attributes",
-                    # params={"slug": slug, "per_page": 1},
-                    wcapi=wcapi
-                )
-                _logger.info(f"Searching attribute by slug: {attrs}")
-                for attr in attrs:
-                    _logger.info(f"Checking attribute: {attr}")
-                    if attr.get("slug") == slug:
-                        wc_attribute = attr
-                        _logger.debug(f"Found attribute by slug: {original_slug}")
-                        break
-            except Exception as e:
-                _logger.debug(f"No attribute found by slug {original_slug}: {e}")
-        
+
         # Extraer WC ID si se encontró
         if wc_attribute:
             woocommerce_id = wc_attribute.get("id")
             _logger.info(f"Attribute found: {wc_attribute}")
-        
+
         # Preparar data para WooCommerce
         wc_data = {
             "name": odoo_attribute.name,
-            "slug": slug,
+            "slug": slug_normalized,
             "type": "select",
             "order_by": "menu_order",
             "has_archives": False
         }
-        
+
         # 3. Decidir acción: CREATE o UPDATE
         if woocommerce_id:
             # El atributo EXISTE en WooCommerce
             if update_existing:
-                _logger.info(f"Updating attribute ID {woocommerce_id} in WooCommerce")
-                wc_data.pop("slug", None)  # Asegurar que el slug se actualice si el nombre cambió
+                _logger.info(
+                    f"Updating attribute ID {woocommerce_id} in WooCommerce")
+                # Asegurar que el slug se actualice si el nombre cambió
                 update_response = wc_request_with_logging(
                     "PUT",
                     f"products/attributes/{woocommerce_id}",
                     params=wc_data,
                     wcapi=wcapi
                 )
-                
+
                 if update_response and isinstance(update_response, dict) and "id" in update_response:
                     action = "updated"
                     message = f"Attribute updated successfully (ID {woocommerce_id})"
                     slug = update_response.get("slug", slug)
-                    
+
                     # Actualizar o crear sync record
                     if existing_sync:
                         repo.update_attribute_sync(
@@ -236,7 +232,8 @@ async def create_or_update_woocommerce_attribute(
                             updated=True,
                             message=f"Sync record recovered: {message}"
                         )
-                        _logger.info(f"Recovered missing sync record for attribute {odoo_attribute.id}")
+                        _logger.info(
+                            f"Recovered missing sync record for attribute {odoo_attribute.id}")
                 else:
                     action = "error"
                     message = f"Failed to update attribute: {update_response}"
@@ -247,20 +244,21 @@ async def create_or_update_woocommerce_attribute(
         else:
             # El atributo NO EXISTE en WooCommerce
             if create_if_not_exists:
-                _logger.info(f"Creating attribute '{odoo_attribute.name}' in WooCommerce")
+                _logger.info(
+                    f"Creating attribute '{odoo_attribute.name}' in WooCommerce")
                 create_response = wc_request_with_logging(
                     "POST",
                     "products/attributes",
                     params=wc_data,
                     wcapi=wcapi
                 )
-                
+
                 if create_response and isinstance(create_response, dict) and "id" in create_response:
                     woocommerce_id = create_response["id"]
                     slug = create_response.get("slug", slug)
                     action = "created"
                     message = f"Attribute created successfully with ID {woocommerce_id}"
-                    
+
                     # Actualizar o crear sync record
                     if existing_sync:
                         repo.update_attribute_sync(
@@ -361,73 +359,64 @@ async def sync_attribute_values(
         action = "skipped"
         message = "Not processed"
         woocommerce_term_id = None
-        
+
         try:
             # 1. Buscar sync existente en BD
             existing_sync = repo.get_attribute_value_sync_by_odoo_id(
                 odoo_value.id,
                 instance_id
             )
-            
+
             # 2. Buscar en WooCommerce (defensivo)
             slug = odoo_value.name.lower().replace(" ", "-")
             wc_term = None
-            
+
             # Si existe sync, intentar buscar por ID guardado
             if existing_sync and existing_sync.woocommerce_id:
                 try:
                     term = await get_attribute_terms_by_id(woocommerce_attribute_id,
-                                                            existing_sync.woocommerce_id,
-                                                            wcapi=wcapi)
+                                                           existing_sync.woocommerce_id,
+                                                           wcapi=wcapi)
                     # Buscar el term específico en la lista
                     wc_term = term
                     if wc_term:
-                        _logger.info(f"Found term by sync ID: {existing_sync.woocommerce_id}")
+                        _logger.info(
+                            f"Found term by sync ID: {existing_sync.woocommerce_id}")
                     else:
                         _logger.info(f"No se encontro el termino aqui")
                 except Exception as e:
-                    _logger.warning(f"Term ID {existing_sync.woocommerce_id} not found in WC, will search by slug: {e}")
-            
-            # Si no se encontró por ID, buscar por slug
-            if not wc_term:
-                wc_term = await get_attribute_terms_by_slug(
-                    woocommerce_attribute_id,
-                    slug=slug,
-                    wcapi=wcapi
-                )
-                if wc_term:
-                    _logger.debug(f"Found term by slug: {slug}")
-                else:
-                    _logger.info(f"Not found term by slug: {slug}")
-            
+                    _logger.warning(
+                        f"Term ID {existing_sync.woocommerce_id} not found in WC, will search by slug: {e}")
+
             # Extraer WC ID si se encontró
             if wc_term:
                 _logger.info(f"Term found: {wc_term}")
                 woocommerce_term_id = wc_term.get("id")
-            
+
             # Preparar data para WooCommerce
             wc_term_data = {
                 "name": odoo_value.name,
                 "slug": slug
             }
-            
+
             # 3. Decidir acción: CREATE o UPDATE
             if woocommerce_term_id:
                 # El term EXISTE en WooCommerce
                 if update_existing:
-                    _logger.info(f"Updating term ID {woocommerce_term_id} for attribute {woocommerce_attribute_id}")
+                    _logger.info(
+                        f"Updating term ID {woocommerce_term_id} for attribute {woocommerce_attribute_id}")
                     update_response = wc_request_with_logging(
                         "PUT",
                         f"products/attributes/{woocommerce_attribute_id}/terms/{woocommerce_term_id}",
                         params=wc_term_data,
                         wcapi=wcapi
                     )
-                    
+
                     if update_response and isinstance(update_response, dict) and "id" in update_response:
                         action = "updated"
                         message = f"Term updated successfully"
                         slug = update_response.get("slug", slug)
-                        
+
                         # Actualizar o crear sync record
                         if existing_sync:
                             repo.update_attribute_value_sync(
@@ -451,7 +440,8 @@ async def sync_attribute_values(
                                 updated=True,
                                 message=f"Sync record recovered: {message}"
                             )
-                            _logger.info(f"Recovered missing sync record for value {odoo_value.id}")
+                            _logger.info(
+                                f"Recovered missing sync record for value {odoo_value.id}")
                     else:
                         action = "error"
                         message = f"Failed to update term: {update_response}"
@@ -461,20 +451,21 @@ async def sync_attribute_values(
             else:
                 # El term NO EXISTE en WooCommerce
                 if create_if_not_exists:
-                    _logger.info(f"Creating term '{odoo_value.name}' for attribute {woocommerce_attribute_id}")
+                    _logger.info(
+                        f"Creating term '{odoo_value.name}' for attribute {woocommerce_attribute_id}")
                     create_response = wc_request_with_logging(
                         "POST",
                         f"products/attributes/{woocommerce_attribute_id}/terms",
                         params=wc_term_data,
                         wcapi=wcapi
                     )
-                    
+
                     if create_response and isinstance(create_response, dict) and "id" in create_response:
                         woocommerce_term_id = create_response["id"]
                         slug = create_response.get("slug", slug)
                         action = "created"
                         message = f"Term created successfully with ID {woocommerce_term_id}"
-                        
+
                         # Actualizar o crear sync record
                         if existing_sync:
                             repo.update_attribute_value_sync(
@@ -503,7 +494,7 @@ async def sync_attribute_values(
                 else:
                     action = "skipped"
                     message = "Create disabled, term not created"
-            
+
             results.append(AttributeValueSyncResult(
                 odoo_id=odoo_value.id,
                 odoo_name=odoo_value.name,
@@ -512,11 +503,11 @@ async def sync_attribute_values(
                 action=action,
                 message=message
             ))
-            
+
         except Exception as e:
             error_msg = f"Error syncing value {odoo_value.id}: {str(e)}"
             _logger.error(error_msg, exc_info=True)
-            
+
             results.append(AttributeValueSyncResult(
                 odoo_id=odoo_value.id,
                 odoo_name=odoo_value.name,
@@ -526,7 +517,7 @@ async def sync_attribute_values(
                 message=error_msg,
                 error_details=str(e)
             ))
-    
+
     return results
 
 

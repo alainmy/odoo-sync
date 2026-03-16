@@ -76,7 +76,7 @@ def upgrade() -> None:
     sa.Column('odoo_language', sa.String(length=10), nullable=True),
     sa.Column('product_descriptions', sa.String(length=20), nullable=True),
     sa.Column('price_list_id', sa.Integer(), nullable=True),
-    sa.ForeignKeyConstraint(['price_list_id'], ['pricelist_sync.id'], ),
+    # sa.ForeignKeyConstraint(['price_list_id'], ['pricelist_sync.id'], ),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id')
     )

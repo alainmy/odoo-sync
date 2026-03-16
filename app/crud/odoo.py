@@ -155,7 +155,7 @@ class OdooClient:
         result = response.json()
         return result.get("result", [])
 
-    def create(self, model, vals):
+    def create(self,uid=None, model=None, vals=None):
         """Crea un registro en Odoo para el modelo y valores dados."""
         payload = {
             "jsonrpc": "2.0",
@@ -165,7 +165,7 @@ class OdooClient:
                 "method": "execute_kw",
                 "args": [
                     self.db,
-                    self.uid,
+                    self.uid if not uid else uid,
                     self.password,
                     model,
                     "create",
@@ -181,6 +181,39 @@ class OdooClient:
             return result  # Devuelve el ID del nuevo registro
         else:
             raise Exception(f"Odoo create error: {result}")
+    
+    def write(self, model, vals, record_id):
+        """Escribe datos en un registro existente en Odoo."""
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "call",
+            "params": {
+                "service": "object",
+                "method": "execute_kw",
+                "args": [
+                    self.db,
+                    self.uid,
+                    self.password,
+                    model,
+                    "write",
+                    [record_id, vals],
+                    {"context": self.context}
+                ],
+            },
+            "id": 3
+        }
+        try:
+            response = requests.post(f"{self.url}/jsonrpc", json=payload)
+            result = response.json()
+            if result.get("error"):
+                logger.error(f"Odoo write error: {result['error']}")
+                raise HTTPException(status_code=500,
+                                    detail=str(result["error"]))
+            logger.info(f"Odoo write response: {result}")
+            return result
+        except Exception as e:
+            logger.error(f"Error in write: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
 
     async def search_count(self, uid, model, domain):
         payload = {

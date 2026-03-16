@@ -65,7 +65,7 @@ def create_customer_in_odoo(customer_data: dict,
         # Preparar los datos del cliente para Odoo
 
         # Crear el cliente en Odoo
-        result = odoo.create(uid, 'res.partner', customer_data)
+        result = odoo.create(model='res.partner', vals=customer_data)
 
         if result.get("error"):
             raise HTTPException(

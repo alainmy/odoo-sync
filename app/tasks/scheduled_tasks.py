@@ -45,27 +45,27 @@ def schedule_multi_instance_product_sync(self) -> Dict[str, Any]:
     Scheduled task to trigger product sync for all active instances.
     Iterates through all users' active instances and queues individual
     sync tasks. Runs every 15 minutes (configured in celery_app.py).
-    
+
     Returns:
         Dict with scheduling statistics
     """
     try:
         logger.info("Starting multi-instance product sync scheduler")
-        
+
         # Get repository
         instance_repo = InstanceRepository(self.db)
-        
+
         # Get all active instances with auto_sync enabled
         active_instances = instance_repo.get_active_instances()
-        
+
         total_instances = len(active_instances)
         queued_count = 0
         skipped_count = 0
         error_count = 0
         task_ids = []
-        
+
         logger.info(f"Found {total_instances} active instances")
-        
+
         for instance in active_instances:
             try:
                 # Check if auto_sync_products is enabled for this instance
@@ -76,7 +76,7 @@ def schedule_multi_instance_product_sync(self) -> Dict[str, Any]:
                     )
                     skipped_count += 1
                     continue
-                
+
                 # Build instance-specific configurations
                 odoo_config = {
                     "url": instance.odoo_url,
@@ -84,13 +84,13 @@ def schedule_multi_instance_product_sync(self) -> Dict[str, Any]:
                     "username": instance.odoo_username,
                     "password": instance.odoo_password,
                 }
-                
+
                 wc_config = {
                     "url": instance.woocommerce_url,
                     "consumer_key": instance.woocommerce_consumer_key,
                     "consumer_secret": instance.woocommerce_consumer_secret,
                 }
-                
+
                 # Validate configurations
                 if not all([odoo_config["url"], odoo_config["db"],
                            odoo_config["username"],
@@ -101,7 +101,7 @@ def schedule_multi_instance_product_sync(self) -> Dict[str, Any]:
                     )
                     skipped_count += 1
                     continue
-                
+
                 if not all([wc_config["url"],
                            wc_config["consumer_key"],
                            wc_config["consumer_secret"]]):
@@ -111,7 +111,7 @@ def schedule_multi_instance_product_sync(self) -> Dict[str, Any]:
                     )
                     skipped_count += 1
                     continue
-                
+
                 # Queue sync task for this instance
                 result = full_product_sync_wc_to_odoo.apply_async(
                     kwargs={
@@ -121,19 +121,19 @@ def schedule_multi_instance_product_sync(self) -> Dict[str, Any]:
                     },
                     headers={"parent_task_id": self.request.id}
                 )
-                
+
                 task_ids.append({
                     "instance_id": instance.id,
                     "instance_name": instance.name,
                     "task_id": result.id
                 })
-                
+
                 queued_count += 1
                 logger.info(
                     f"Queued sync for instance {instance.id} "
                     f"({instance.name}): task_id={result.id}"
                 )
-                
+
             except Exception as e:
                 error_count += 1
                 logger.error(
@@ -150,13 +150,13 @@ def schedule_multi_instance_product_sync(self) -> Dict[str, Any]:
                     retries=0,
                     max_retries=1
                 )
-        
+
         logger.info(
             f"Multi-instance sync scheduling completed: "
             f"{queued_count} queued, {skipped_count} skipped, "
             f"{error_count} errors"
         )
-        
+
         return {
             "success": True,
             "total_instances": total_instances,
@@ -165,7 +165,7 @@ def schedule_multi_instance_product_sync(self) -> Dict[str, Any]:
             "errors": error_count,
             "task_ids": task_ids
         }
-        
+
     except Exception as exc:
         logger.error(
             f"Error in multi-instance sync scheduler: {exc}",
@@ -187,16 +187,16 @@ def auto_sync_stock(self) -> Dict[str, Any]:
     """
     Scheduled task to sync stock levels from Odoo to WooCommerce.
     Runs every 30 minutes (configured in celery_app.py beat_schedule).
-    
+
     Returns:
         Dict with sync result
     """
     try:
         logger.info("Starting automatic stock sync")
-        
+
         from app.crud.odoo import OdooClient
         from app.services.woocommerce import wc_request
-        
+
         # Initialize Odoo client
         client = OdooClient(
             settings.odoo_url,
@@ -204,51 +204,52 @@ def auto_sync_stock(self) -> Dict[str, Any]:
             settings.odoo_username,
             settings.odoo_password
         )
-        
+
         # Get products with stock information
         products = client.search_read_sync(
             "product.product",
             domain=[("default_code", "!=", False), ("active", "=", True)],
             fields=["id", "default_code", "qty_available"]
         )
-        
+
         updated_count = 0
         error_count = 0
-        
+
         for product in products:
             try:
                 sku = product.get("default_code")
                 qty = int(product.get("qty_available", 0))
-                
+
                 # Find WooCommerce product by SKU
-                wc_products = wc_request("GET", "/products", params={"sku": sku})
-                
+                wc_products = wc_request(
+                    "GET", "/products", params={"sku": sku})
+
                 if wc_products:
                     wc_product_id = wc_products[0]["id"]
-                    
+
                     # Update stock in WooCommerce
                     wc_request(
                         "PUT",
                         f"/products/{wc_product_id}",
                         params={"stock_quantity": qty}
                     )
-                    
+
                     updated_count += 1
-                    
+
             except Exception as e:
                 logger.error(f"Error syncing stock for SKU {sku}: {e}")
                 error_count += 1
-        
+
         logger.info(
             f"Stock sync completed: {updated_count} updated, {error_count} errors"
         )
-        
+
         return {
             "success": True,
             "updated_count": updated_count,
             "error_count": error_count
         }
-        
+
     except Exception as exc:
         logger.error(f"Error in automatic stock sync: {exc}")
         return {
@@ -266,31 +267,31 @@ def cleanup_logs(self) -> Dict[str, Any]:
     """
     Scheduled task to clean up old logs.
     Runs daily at midnight.
-    
+
     Returns:
         Dict with cleanup result
     """
     try:
         logger.info("Starting log cleanup")
-        
+
         # Clean up webhook logs older than 30 days
         webhook_result = cleanup_old_webhooks.apply_async(
             args=[30]
         ).get(timeout=60)
-        
+
         # Could add cleanup for other logs here
-        
+
         logger.info("Log cleanup completed")
-        
+
         # Clean up old task logs (older than 30 days)
         task_log_result = cleanup_old_task_logs(days=30)
-        
+
         return {
             "success": True,
             "webhook_cleanup": webhook_result,
             "task_log_cleanup": task_log_result
         }
-        
+
     except Exception as exc:
         logger.error(f"Error in log cleanup: {exc}")
         return {

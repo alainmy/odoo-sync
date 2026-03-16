@@ -52,7 +52,8 @@ def sync_attributes_from_odoo(
     instance_id: int,
     attribute_ids: List[int] = None,
     create_if_not_exists: bool = True,
-    update_existing: bool = True
+    update_existing: bool = True,
+    wc_config: Dict[str, str] = None
 ) -> Dict[str, Any]:
     """
     Sincronizar atributos desde Odoo hacia WooCommerce (tarea asíncrona)
@@ -81,7 +82,8 @@ def sync_attributes_from_odoo(
             username=instance.odoo_username,
             password=instance.odoo_password
         )
-
+        if wc_config:
+            wcapi = get_wc_api_from_instance_config(wc_config)
         uid = asyncio.run(odoo_client.odoo_authenticate())
         if not uid:
             raise ValueError("No se pudo autenticar con Odoo")
@@ -128,7 +130,8 @@ def sync_attributes_from_odoo(
                         instance_id=instance_id,
                         db=db,
                         create_if_not_exists=create_if_not_exists,
-                        update_existing=update_existing
+                        update_existing=update_existing,
+                        wcapi=wcapi
                     )
                 )
 
@@ -147,7 +150,8 @@ def sync_attributes_from_odoo(
                                     odoo_attribute=odoo_attribute,
                                     woocommerce_attribute_id=attribute_result.woocommerce_id,
                                     instance_id=instance_id,
-                                    db=db
+                                    db=db,
+                                    wcapi=wcapi
                                 )
                             )
 
@@ -276,7 +280,8 @@ def sync_single_attribute(
                     odoo_attribute=odoo_attribute,
                     woocommerce_attribute_id=attribute_result.woocommerce_id,
                     instance_id=instance_id,
-                    db=db
+                    db=db,
+                    wcapi=wcapi
                 )
             )
 

@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     fastapi_secret_key: str = "supersecretkey"
     fastapi_debug: bool = True
     fast_api_host: str = "http://localhost:8000"
+    webhook_url: str = "https://diphthongous-ponderingly-hilaria.ngrok-free.dev"
     image_dir: str = "app/images/products"
     fastapi_database: str = "fastapi_db"
     algorithm: str = "HS256"

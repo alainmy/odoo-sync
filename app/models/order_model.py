@@ -17,8 +17,7 @@ class OrderSync(Base):
     error_message = Column(String(255), nullable=True)
     sync_date = Column(DateTime(timezone=True), nullable=True)
     instance_id = Column(Integer,
-                         ForeignKey('woocommerce_instances.id'),
-                         onupdate="CASCADE",
+                         ForeignKey('woocommerce_instances.id', ondelete='CASCADE'),
                          nullable=False, index=True)
     # Messages
     message = Column(String(500), index=True)

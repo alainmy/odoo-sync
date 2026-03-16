@@ -132,4 +132,3 @@ class OrderSyncRepository(BaseSyncRepository[OrderSync]):
         return self.db.query(OrderSync).filter(
             OrderSync.instance_id == instance_id
         ).offset(offset).limit(limit).all()
-

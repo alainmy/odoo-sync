@@ -49,6 +49,7 @@ class OdooProductSchema(BaseModel):
             write_date=odoo_product["write_date"] or None,
         )
 
+
 class ProductBase(BaseModel):
 
     id: int
@@ -101,8 +102,9 @@ class ProductPriceList(BaseModel):
             item_ids=odoo_price_list_item["item_ids"] or None,
         )
 
+
 class ProductPriceListItem(BaseModel):
-    
+
     name: Optional[str] = None
     price: Optional[float] = None
     pricelist_id: Optional[list] = None

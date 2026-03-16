@@ -111,13 +111,15 @@ class PricelistSyncRepository:
     def inactivate_price_list(self,
                               price_list_id: int):
 
-        price_list = self.db.query(PricelistSync).filter(PricelistSync.id == price_list_id).first()
+        price_list = self.db.query(PricelistSync).filter(
+            PricelistSync.id == price_list_id).first()
 
         if not price_list:
             raise HTTPException(
                 status_code=404, detail="Price List not found."
             )
-        all_price_list = self.db.query(PricelistSync).filter(PricelistSync.id != price_list_id).all()
+        all_price_list = self.db.query(PricelistSync).filter(
+            PricelistSync.id != price_list_id).all()
         for item in all_price_list:
             item.active = False
             self.db.commit()
