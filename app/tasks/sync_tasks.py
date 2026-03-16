@@ -1108,7 +1108,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
 
             # Fallback: search by SKU
             if not product_id:
-                return {"success": False, "error": f"Product with id {line["product_id"]} not syncned"}
+                return {"success": False, "error": f"Product with id {line['product_id']} not synced"}
 
             if product_id:
                 order_lines.append((0, 0, {
