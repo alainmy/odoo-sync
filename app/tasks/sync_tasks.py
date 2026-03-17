@@ -1,7 +1,6 @@
 """
 Celery tasks for synchronization operations between WooCommerce and Odoo.
 """
-import email
 from pyexpat import model
 from uuid import uuid4
 import logging
@@ -36,6 +35,7 @@ from app.services.woocommerce import manage_category_for_export, \
 from app.models.admin import CategorySync, ProductSync, ProductVariantSync
 from app.utils.image_helper import ImageHelper
 from app.models.user_model import ClientSync
+from app.repositories.client_sync_repository import ClientSyncRepository
 from app.services.odoo_service import create_customer_in_odoo
 from app.services.woocommerce.client import wc_request_with_logging
 
@@ -243,6 +243,138 @@ def sync_product_variations(
             "failed": 0,
             "errors": [str(e)]
         }
+
+
+# ==================== Helpers for Order Sync ====================
+
+def _sync_partner_with_database(
+    odoo_id: int,
+    woo_id: int,
+    email: str,
+    name: str,
+    contact_type: str,
+    db: Session,
+    client_sync_repo: 'ClientSyncRepository',
+    parent_id: Optional[int] = None
+) -> ClientSync:
+    """
+    Create or update a partner sync record in the database.
+    
+    Args:
+        odoo_id: Odoo partner ID
+        woo_id: WooCommerce customer ID
+        email: Partner email
+        name: Partner name
+        contact_type: Type of contact (contact, billing, shipping)
+        db: Database session
+        client_sync_repo: ClientSyncRepository instance
+        parent_id: Parent partner ID for hierarchical relationships
+    
+    Returns:
+        The created or updated ClientSync record
+    """
+    existing_sync = db.query(ClientSync).filter(
+        ClientSync.odoo_id == odoo_id,
+        ClientSync.contact_type == contact_type
+    ).first()
+    
+    if existing_sync:
+        # Update existing record
+        sync_record = client_sync_repo.update_sync_record(
+            existing_sync,
+            woo_id=woo_id,
+            email=email,
+            name=name,
+            sync_status="synced"
+        )
+        logger.info(f"Updated sync record: type={contact_type}, odoo_id={odoo_id}")
+    else:
+        # Create new record
+        sync_record = client_sync_repo.create_sync_record(
+            odoo_id=odoo_id,
+            woo_id=woo_id,
+            email=email,
+            name=name,
+            contact_type=contact_type,
+            sync_status="synced",
+            parent_id=parent_id
+        )
+        logger.info(f"Created sync record: type={contact_type}, odoo_id={odoo_id}")
+    
+    return sync_record
+
+
+def _handle_sync_partner(
+    model: str,
+    domain: List,
+    partner_name: str,
+    partner_data: Dict[str, Any],
+    contact_type: str,
+    woocommerce_id: int,
+    customer_email: str,
+    odoo_client: OdooClient,
+    db: Session,
+    client_sync_repo: 'ClientSyncRepository',
+    parent_sync: Optional[ClientSync] = None,
+    create_func = None
+) -> int:
+    """
+    Handle the complete flow of finding/creating/updating a partner and its sync record.
+    
+    Args:
+        model: Odoo model (res.partner)
+        domain: Search domain for existing partner
+        partner_name: Name for logging
+        partner_data: Data to send to Odoo
+        contact_type: Type of contact (contact, billing, shipping)
+        woocommerce_id: WooCommerce customer ID
+        customer_email: Customer email
+        odoo_client: OdooClient instance
+        db: Database session
+        client_sync_repo: ClientSyncRepository instance
+        parent_sync: Parent sync record (for hierarchical relationships)
+        create_func: Function to create partner if not found
+    
+    Returns:
+        The Odoo partner ID
+    """
+    # Search for existing partner
+    existing_partners = odoo_client.search_read_sync(
+        model=model,
+        domain=domain,
+        fields=["id"]
+    )
+    
+    if existing_partners:
+        # Existing partner found - update it
+        partner_id = existing_partners[0]["id"]
+        update_data = {k: v for k, v in partner_data.items() if k != "type" and k != "parent_id"}
+        odoo_client.write(model=model, vals=update_data, record_id=partner_id)
+        logger.info(f"Updated existing {partner_name} in Odoo: {partner_id}")
+    else:
+        # Create new partner
+        if create_func:
+            partner_id = create_func(partner_data, odoo_client=odoo_client)
+            if not partner_id:
+                logger.error(f"Failed to create {partner_name} in Odoo")
+                return None
+            logger.info(f"Created new {partner_name} in Odoo: {partner_id}")
+        else:
+            return None
+    
+    # Sync database record
+    _sync_partner_with_database(
+        odoo_id=partner_id,
+        woo_id=woocommerce_id,
+        email=customer_email,
+        name=partner_data.get("name", ""),
+        contact_type=contact_type,
+        db=db,
+        client_sync_repo=client_sync_repo,
+        parent_id=parent_sync.id if parent_sync else None
+    )
+    
+    return partner_id
 
 
 # ==================== Celery Tasks ====================
@@ -908,6 +1040,9 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
         shipping_odoo_partner_id = None
         odoo_contact_id = None
         contact_sync = None
+        
+        # Initialize repository once for all operations
+        client_sync_repo = ClientSyncRepository(self.db)
 
         if not customer_email or not customer_id:
             logger.warning(f"Order {wc_order_id} missing email or customer_id")
@@ -929,94 +1064,81 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             fields=["id"]
         )
 
+        contact_name = f"{order_data.get('billing', {}).get('first_name', '')} {order_data.get('billing', {}).get('last_name', '')}".strip()
+        
         if existing_contacts:
             odoo_contact_id = existing_contacts[0]["id"]
             logger.info(f"Found existing contact in Odoo: {odoo_contact_id}")
+            
+            # Update existing contact data in Odoo
+            client.write(
+                model="res.partner",
+                vals={"name": contact_name, "email": customer_email},
+                record_id=odoo_contact_id
+            )
+            logger.info(f"Updated existing contact in Odoo: {odoo_contact_id}")
         else:
             # Create new contact
             contact_data = {
-                "name": f"{order_data.get('billing', {}).get('first_name', '')} "
-                        f"{order_data.get('billing', {}).get('last_name', '')}".strip(
-                        ),
+                "name": contact_name,
                 "email": customer_email,
                 "type": "contact"
             }
-            logger.info(
-                f"Creating new contact in Odoo with data: {contact_data}")
-            contact = create_customer_in_odoo(contact_data, odoo_client=client)
-            if not contact or not contact.get("id"):
+            logger.info(f"Creating new contact in Odoo with data: {contact_data}")
+            odoo_contact_id = create_customer_in_odoo(contact_data, odoo_client=client)
+            if not odoo_contact_id:
                 logger.error("Failed to create contact in Odoo")
                 return {"success": False, "error": "Failed to create contact"}
-
-            odoo_contact_id = contact
-            contact_sync = ClientSync(
-                odoo_id=odoo_contact_id,
-                woo_id=woo_customer_id,
-                email=customer_email,
-                name=contact_data.get("name"),
-                contact_type="contact",
-                sync_status="synced"
-            )
-            self.db.add(contact_sync)
-            self.db.commit()
-            self.db.refresh(contact_sync)
             logger.info(f"Created new contact in Odoo: {odoo_contact_id}")
+        
+        # Sync contact record in database
+        contact_sync = _sync_partner_with_database(
+            odoo_id=odoo_contact_id,
+            woo_id=woo_customer_id,
+            email=customer_email,
+            name=contact_name,
+            contact_type="contact",
+            db=self.db,
+            client_sync_repo=client_sync_repo
+        )
 
         # ========== STEP 2: Find or Create Billing Address (type='invoice') ==========
-        existing_billing = client.search_read_sync(
+        billing_name = f"{billing_address.get('first_name', '')} {billing_address.get('last_name', '')}".strip()
+        billing_partner_data = {
+            "parent_id": odoo_contact_id,
+            "name": billing_name,
+            "email": customer_email,
+            "phone": billing_address.get("phone", ""),
+            "street": billing_address.get("address_1", ""),
+            "street2": billing_address.get("address_2", ""),
+            "city": billing_address.get("city", ""),
+            "zip": billing_address.get("postcode", ""),
+            "type": "invoice",
+        }
+        
+        billing_odoo_partner_id = _handle_sync_partner(
             model="res.partner",
             domain=[
                 ("parent_id", "=", odoo_contact_id),
                 ("type", "=", "invoice"),
                 ("email", "=", customer_email)
             ],
-            fields=["id"]
+            partner_name="billing address",
+            partner_data=billing_partner_data,
+            contact_type="billing",
+            woocommerce_id=woo_customer_id,
+            customer_email=customer_email,
+            odoo_client=client,
+            db=self.db,
+            client_sync_repo=client_sync_repo,
+            parent_sync=contact_sync,
+            create_func=create_customer_in_odoo
         )
-
-        if existing_billing:
-            billing_odoo_partner_id = existing_billing[0]["id"]
-            logger.info(
-                f"Found existing billing address: {billing_odoo_partner_id}")
-        else:
-            # Create billing address
-            billing_partner_data = {
-                "parent_id": odoo_contact_id,
-                "name": f"{billing_address.get('first_name', '')} "
-                        f"{billing_address.get('last_name', '')}".strip(),
-                "email": customer_email,
-                "phone": billing_address.get("phone", ""),
-                "street": billing_address.get("address_1", ""),
-                "street2": billing_address.get("address_2", ""),
-                "city": billing_address.get("city", ""),
-                "zip": billing_address.get("postcode", ""),
-                "type": "invoice",
-            }
-            logger.info(
-                f"Creating billing address in Odoo with data: {billing_partner_data}")
-            billing_partner = create_customer_in_odoo(
-                billing_partner_data, odoo_client=client)
-            if not billing_partner:
-                logger.error("Failed to create billing address in Odoo")
-                return {"success": False, "error": "Failed to create billing address"}
-
-            billing_odoo_partner_id = billing_partner
-            partner_sync = ClientSync(
-                odoo_id=billing_odoo_partner_id,
-                woo_id=woo_customer_id,
-                email=customer_email,
-                name=billing_partner_data.get("name"),
-                contact_type="billing",
-                sync_status="synced",
-                parent_id=contact_sync.id if contact_sync else None
-            )
-            self.db.add(partner_sync)
-            self.db.commit()
-            self.db.refresh(partner_sync)
-            logger.info(
-                f"Created billing address in Odoo: {billing_odoo_partner_id}")
+        
+        if not billing_odoo_partner_id:
+            return {"success": False, "error": "Failed to sync billing address"}
 
         # ========== STEP 3: Find or Create Shipping Address (type='delivery') ==========
-        # Check if shipping is different from billing
         is_shipping_different = (
             shipping_address.get("address_1") != billing_address.get("address_1") or
             shipping_address.get("city") != billing_address.get("city") or
@@ -1024,59 +1146,44 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
         )
 
         if is_shipping_different:
-            existing_shipping = client.search_read_sync(
+            shipping_name = f"{shipping_address.get('first_name', '')} {shipping_address.get('last_name', '')}".strip()
+            shipping_partner_data = {
+                "parent_id": odoo_contact_id,
+                "name": shipping_name,
+                "street": shipping_address.get("address_1", ""),
+                "street2": shipping_address.get("address_2", ""),
+                "city": shipping_address.get("city", ""),
+                "zip": shipping_address.get("postcode", ""),
+                "type": "delivery",
+            }
+            
+            shipping_result = _handle_sync_partner(
                 model="res.partner",
                 domain=[
                     ("parent_id", "=", odoo_contact_id),
                     ("type", "=", "delivery")
                 ],
-                fields=["id"]
+                partner_name="shipping address",
+                partner_data=shipping_partner_data,
+                contact_type="shipping",
+                woocommerce_id=woo_customer_id,
+                customer_email=customer_email,
+                odoo_client=client,
+                db=self.db,
+                client_sync_repo=client_sync_repo,
+                parent_sync=contact_sync,
+                create_func=create_customer_in_odoo
             )
-
-            if existing_shipping:
-                shipping_odoo_partner_id = existing_shipping[0]["id"]
-                logger.info(
-                    f"Found existing shipping address: {shipping_odoo_partner_id}")
+            
+            if not shipping_result:
+                logger.warning("Failed to sync shipping address, using billing address")
+                shipping_odoo_partner_id = billing_odoo_partner_id
             else:
-                # Create shipping address
-                shipping_partner_data = {
-                    "parent_id": odoo_contact_id,
-                    "name": f"{shipping_address.get('first_name', '')} "
-                            f"{shipping_address.get('last_name', '')}".strip(),
-                    "street": shipping_address.get("address_1", ""),
-                    "street2": shipping_address.get("address_2", ""),
-                    "city": shipping_address.get("city", ""),
-                    "zip": shipping_address.get("postcode", ""),
-                    "type": "delivery",
-                }
-                logger.info(
-                    f"Creating shipping address in Odoo with data: {shipping_partner_data}")
-                shipping_partner = create_customer_in_odoo(
-                    shipping_partner_data, odoo_client=client)
-                if not shipping_partner:
-                    logger.warning(
-                        "Failed to create shipping address, using billing address")
-                    shipping_odoo_partner_id = billing_odoo_partner_id
-                else:
-                    shipping_odoo_partner_id = shipping_partner
-                    shipping_sync = ClientSync(
-                        odoo_id=shipping_odoo_partner_id,
-                        woo_id=woo_customer_id,
-                        name=shipping_partner_data.get("name"),
-                        contact_type="shipping",
-                        sync_status="synced",
-                        parent_id=contact_sync.id if contact_sync else None
-                    )
-                    self.db.add(shipping_sync)
-                    self.db.commit()
-                    self.db.refresh(shipping_sync)
-                    logger.info(
-                        f"Created shipping address in Odoo: {shipping_odoo_partner_id}")
+                shipping_odoo_partner_id = shipping_result
         else:
             # Shipping same as billing
             shipping_odoo_partner_id = billing_odoo_partner_id
-            logger.info(
-                "Shipping address same as billing, using billing address")
+            logger.info("Shipping address same as billing, using billing address")
 
         # ========== STEP 4: Create Order Lines ==========
         order_lines = []
