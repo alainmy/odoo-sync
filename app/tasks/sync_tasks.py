@@ -995,7 +995,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                 f"Creating billing address in Odoo with data: {billing_partner_data}")
             billing_partner = create_customer_in_odoo(
                 billing_partner_data, odoo_client=client)
-            if not billing_partner or not billing_partner.get("id"):
+            if not billing_partner:
                 logger.error("Failed to create billing address in Odoo")
                 return {"success": False, "error": "Failed to create billing address"}
 
