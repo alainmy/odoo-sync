@@ -1137,7 +1137,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             "client_order_ref": f"WC-{wc_order_id}",
             "order_line": order_lines,
             "note": order_data.get("customer_note", ""),
-            "state": order_status[order_data["state"]]
+            "state": order_status[order_data["status"]]
         }
         logger.info(f"Prepared sale order data for Odoo: {sale_order_data}")
 
