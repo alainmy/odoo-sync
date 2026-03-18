@@ -1260,15 +1260,31 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             logger.info(
                 f"Order already exists in Odoo: {existing_orders[0]['id']}")
             order_id = existing_orders[0]["id"]
-            # update order
-            if existing_orders[0]['state'] != 'sale':
-                updated_order = client.write(
-                    model='sale.order',
-                    vals=sale_order_data,
-                    record_id=order_id
+            order_state = existing_orders[0]['state']
+            
+            # Only update if order is in draft state
+            # Orders in other states (sent, sale, done, cancelled) have restrictions
+            if order_state == 'draft':
+                try:
+                    client.write(
+                        model='sale.order',
+                        vals=sale_order_data,
+                        record_id=order_id
+                    )
+                    logger.info(f"Updated existing order in draft state: {order_id}")
+                    action = "updated"
+                except Exception as update_exc:
+                    logger.warning(
+                        f"Failed to update order {order_id}: {update_exc}. "
+                        f"Order will remain unchanged."
+                    )
+                    action = "existing"
+            else:
+                logger.info(
+                    f"Order {order_id} is in '{order_state}' state. "
+                    f"Only draft orders can be updated. Order remains unchanged."
                 )
-                logger.info(f"Order updated with id {updated_order}")
-            action = "existing"
+                action = "existing"
         else:
             logger.info(
                 f"Creating new sale order in Odoo for WooCommerce order {wc_order_id}")
