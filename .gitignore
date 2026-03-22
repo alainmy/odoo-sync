@@ -93,7 +93,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-
+alembic/
 # Spyder project settings
 .spyderproject
 .spyproject

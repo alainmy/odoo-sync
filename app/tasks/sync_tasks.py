@@ -259,7 +259,7 @@ def _sync_partner_with_database(
 ) -> ClientSync:
     """
     Create or update a partner sync record in the database.
-    
+
     Args:
         odoo_id: Odoo partner ID
         woo_id: WooCommerce customer ID
@@ -269,7 +269,7 @@ def _sync_partner_with_database(
         db: Database session
         client_sync_repo: ClientSyncRepository instance
         parent_id: Parent partner ID for hierarchical relationships
-    
+
     Returns:
         The created or updated ClientSync record
     """
@@ -277,7 +277,7 @@ def _sync_partner_with_database(
         ClientSync.odoo_id == odoo_id,
         ClientSync.contact_type == contact_type
     ).first()
-    
+
     if existing_sync:
         # Update existing record
         sync_record = client_sync_repo.update_sync_record(
@@ -287,7 +287,8 @@ def _sync_partner_with_database(
             name=name,
             sync_status="synced"
         )
-        logger.info(f"Updated sync record: type={contact_type}, odoo_id={odoo_id}")
+        logger.info(
+            f"Updated sync record: type={contact_type}, odoo_id={odoo_id}")
     else:
         # Create new record
         sync_record = client_sync_repo.create_sync_record(
@@ -299,8 +300,9 @@ def _sync_partner_with_database(
             sync_status="synced",
             parent_id=parent_id
         )
-        logger.info(f"Created sync record: type={contact_type}, odoo_id={odoo_id}")
-    
+        logger.info(
+            f"Created sync record: type={contact_type}, odoo_id={odoo_id}")
+
     return sync_record
 
 
@@ -316,11 +318,11 @@ def _handle_sync_partner(
     db: Session,
     client_sync_repo: 'ClientSyncRepository',
     parent_sync: Optional[ClientSync] = None,
-    create_func = None
+    create_func=None
 ) -> int:
     """
     Handle the complete flow of finding/creating/updating a partner and its sync record.
-    
+
     Args:
         model: Odoo model (res.partner)
         domain: Search domain for existing partner
@@ -334,7 +336,7 @@ def _handle_sync_partner(
         client_sync_repo: ClientSyncRepository instance
         parent_sync: Parent sync record (for hierarchical relationships)
         create_func: Function to create partner if not found
-    
+
     Returns:
         The Odoo partner ID
     """
@@ -344,11 +346,12 @@ def _handle_sync_partner(
         domain=domain,
         fields=["id"]
     )
-    
+
     if existing_partners:
         # Existing partner found - update it
         partner_id = existing_partners[0]["id"]
-        update_data = {k: v for k, v in partner_data.items() if k != "type" and k != "parent_id"}
+        update_data = {k: v for k, v in partner_data.items(
+        ) if k != "type" and k != "parent_id"}
         odoo_client.write(model=model, vals=update_data, record_id=partner_id)
         logger.info(f"Updated existing {partner_name} in Odoo: {partner_id}")
     else:
@@ -361,7 +364,7 @@ def _handle_sync_partner(
             logger.info(f"Created new {partner_name} in Odoo: {partner_id}")
         else:
             return None
-    
+
     # Sync database record
     _sync_partner_with_database(
         odoo_id=partner_id,
@@ -373,7 +376,7 @@ def _handle_sync_partner(
         client_sync_repo=client_sync_repo,
         parent_id=parent_sync.id if parent_sync else None
     )
-    
+
     return partner_id
 
 
@@ -1040,7 +1043,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
         shipping_odoo_partner_id = None
         odoo_contact_id = None
         contact_sync = None
-        
+
         # Initialize repository once for all operations
         client_sync_repo = ClientSyncRepository(self.db)
 
@@ -1064,12 +1067,13 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             fields=["id"]
         )
 
-        contact_name = f"{order_data.get('billing', {}).get('first_name', '')} {order_data.get('billing', {}).get('last_name', '')}".strip()
-        
+        contact_name = f"{order_data.get('billing', {}).get('first_name', '')} {order_data.get('billing', {}).get('last_name', '')}".strip(
+        )
+
         if existing_contacts:
             odoo_contact_id = existing_contacts[0]["id"]
             logger.info(f"Found existing contact in Odoo: {odoo_contact_id}")
-            
+
             # Update existing contact data in Odoo
             client.write(
                 model="res.partner",
@@ -1084,13 +1088,15 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                 "email": customer_email,
                 "type": "contact"
             }
-            logger.info(f"Creating new contact in Odoo with data: {contact_data}")
-            odoo_contact_id = create_customer_in_odoo(contact_data, odoo_client=client)
+            logger.info(
+                f"Creating new contact in Odoo with data: {contact_data}")
+            odoo_contact_id = create_customer_in_odoo(
+                contact_data, odoo_client=client)
             if not odoo_contact_id:
                 logger.error("Failed to create contact in Odoo")
                 return {"success": False, "error": "Failed to create contact"}
             logger.info(f"Created new contact in Odoo: {odoo_contact_id}")
-        
+
         # Sync contact record in database
         contact_sync = _sync_partner_with_database(
             odoo_id=odoo_contact_id,
@@ -1103,7 +1109,8 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
         )
 
         # ========== STEP 2: Find or Create Billing Address (type='invoice') ==========
-        billing_name = f"{billing_address.get('first_name', '')} {billing_address.get('last_name', '')}".strip()
+        billing_name = f"{billing_address.get('first_name', '')} {billing_address.get('last_name', '')}".strip(
+        )
         billing_partner_data = {
             "parent_id": odoo_contact_id,
             "name": billing_name,
@@ -1115,7 +1122,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             "zip": billing_address.get("postcode", ""),
             "type": "invoice",
         }
-        
+
         billing_odoo_partner_id = _handle_sync_partner(
             model="res.partner",
             domain=[
@@ -1134,7 +1141,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             parent_sync=contact_sync,
             create_func=create_customer_in_odoo
         )
-        
+
         if not billing_odoo_partner_id:
             return {"success": False, "error": "Failed to sync billing address"}
 
@@ -1146,7 +1153,8 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
         )
 
         if is_shipping_different:
-            shipping_name = f"{shipping_address.get('first_name', '')} {shipping_address.get('last_name', '')}".strip()
+            shipping_name = f"{shipping_address.get('first_name', '')} {shipping_address.get('last_name', '')}".strip(
+            )
             shipping_partner_data = {
                 "parent_id": odoo_contact_id,
                 "name": shipping_name,
@@ -1156,7 +1164,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                 "zip": shipping_address.get("postcode", ""),
                 "type": "delivery",
             }
-            
+
             shipping_result = _handle_sync_partner(
                 model="res.partner",
                 domain=[
@@ -1174,16 +1182,18 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                 parent_sync=contact_sync,
                 create_func=create_customer_in_odoo
             )
-            
+
             if not shipping_result:
-                logger.warning("Failed to sync shipping address, using billing address")
+                logger.warning(
+                    "Failed to sync shipping address, using billing address")
                 shipping_odoo_partner_id = billing_odoo_partner_id
             else:
                 shipping_odoo_partner_id = shipping_result
         else:
             # Shipping same as billing
             shipping_odoo_partner_id = billing_odoo_partner_id
-            logger.info("Shipping address same as billing, using billing address")
+            logger.info(
+                "Shipping address same as billing, using billing address")
 
         # ========== STEP 4: Create Order Lines ==========
         order_lines = []
@@ -1236,7 +1246,8 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             "completed": "sale",
             "on-hold": "draft",
             "processing": "sent",
-            "cancelled": "cancel"
+            "cancelled": "cancel",
+            "checkout-draft": "draft"
         }
         sale_order_data = {
             "partner_id": billing_odoo_partner_id,
@@ -1252,7 +1263,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
         existing_orders = client.search_read_sync(
             "sale.order",
             domain=[("client_order_ref", "=", f"WC-{wc_order_id}")],
-            fields=["id",'state'],
+            fields=["id", 'state'],
             limit=1
         )
 
@@ -1261,7 +1272,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                 f"Order already exists in Odoo: {existing_orders[0]['id']}")
             order_id = existing_orders[0]["id"]
             order_state = existing_orders[0]['state']
-            
+
             # Only update if order is in draft state
             # Orders in other states (sent, sale, done, cancelled) have restrictions
             if order_state == 'draft':
@@ -1271,7 +1282,8 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                         vals=sale_order_data,
                         record_id=order_id
                     )
-                    logger.info(f"Updated existing order in draft state: {order_id}")
+                    logger.info(
+                        f"Updated existing order in draft state: {order_id}")
                     action = "updated"
                 except Exception as update_exc:
                     logger.warning(
