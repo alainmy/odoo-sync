@@ -17,13 +17,26 @@ logger = logging.getLogger(__name__)
 
 class DatabaseTask(Task):
     """Base task with database session management."""
-    _db = None
+    db = None
 
-    @property
-    def db(self):
-        if self._db is None:
-            self._db = SessionLocal()
-        return self._db
+    # @property
+    # def db(self):
+    #     if self._db is None:
+    #         self._db = SessionLocal()
+    #     return self._db
+
+    def __call__(self, *args, **kwargs):
+        self.db = SessionLocal()
+        try:
+            result = self.run(*args, **kwargs)
+            self.db.commit()
+            return result
+        except Exception as exc:
+            self.db.rollback()
+            raise self.retry(exc=exc)
+            raise
+        finally:
+            self.db.close()
 
     def after_return(self, *args, **kwargs):
         if self._db is not None:
@@ -91,7 +104,7 @@ def handle_webhook_creation(task, service, repo, wcapi, config, new_webhook_id):
     """Create a webhook in WooCommerce and manage local updates."""
     update_task_progress(task, current=2, total=5,
                          message="Creating webhook in WooCommerce...")
-    
+
     config = WebhookConfigCreate(**config)
     wc_response = service.create_webhook_in_woocommerce(wcapi, config)
 

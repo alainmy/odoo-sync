@@ -384,13 +384,26 @@ def _handle_sync_partner(
 
 class DatabaseTask(Task):
     """Base task with database session management."""
-    _db = None
+    db = None
 
-    @property
-    def db(self):
-        if self._db is None:
-            self._db = SessionLocal()
-        return self._db
+    # @property
+    # def db(self):
+    #     if self._db is None:
+    #         self._db = SessionLocal()
+    #     return self._db
+    
+    def __call__(self, *args, **kwargs):
+        self.db = SessionLocal()
+        try:
+            result = self.run(*args, **kwargs)
+            self.db.commit()
+            return result
+        except Exception as exc:
+            self.db.rollback()
+            raise self.retry(exc=exc)
+            raise
+        finally:
+            self.db.close()
 
     def after_return(self, *args, **kwargs):
         if self._db is not None:
