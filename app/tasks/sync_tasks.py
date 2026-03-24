@@ -391,7 +391,7 @@ class DatabaseTask(Task):
     #     if self._db is None:
     #         self._db = SessionLocal()
     #     return self._db
-    
+
     def __call__(self, *args, **kwargs):
         self.db = SessionLocal()
         try:
@@ -404,11 +404,6 @@ class DatabaseTask(Task):
             raise
         finally:
             self.db.close()
-
-    def after_return(self, *args, **kwargs):
-        if self._db is not None:
-            self._db.close()
-            self._db = None
 
 
 @celery_app.task(

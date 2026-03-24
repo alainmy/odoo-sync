@@ -24,7 +24,7 @@ class DatabaseTask(Task):
     #     if self._db is None:
     #         self._db = SessionLocal()
     #     return self._db
-    
+
     def __call__(self, *args, **kwargs):
         self.db = SessionLocal()
         try:
@@ -37,11 +37,6 @@ class DatabaseTask(Task):
             raise
         finally:
             self.db.close()
-
-    def after_return(self, *args, **kwargs):
-        if self._db is not None:
-            self._db.close()
-            self._db = None
 
 
 @celery_app.task(
@@ -60,7 +55,7 @@ def sync_product_prices_task(
 ):
     """
     Celery task to sync prices for a single product.
-    
+
     Args:
         odoo_product_id: Odoo product ID
         instance_id: WooCommerce instance ID
@@ -73,7 +68,7 @@ def sync_product_prices_task(
             f"Starting price sync for product {odoo_product_id}, "
             f"instance {instance_id}"
         )
-        
+
         # Use provided config or fallback to settings
         if not odoo_config:
             odoo_config = {
@@ -82,7 +77,7 @@ def sync_product_prices_task(
                 "username": settings.odoo_username,
                 "password": settings.odoo_password
             }
-        
+
         odoo_client = OdooClient(
             odoo_config["url"],
             odoo_config["db"],
@@ -97,7 +92,7 @@ def sync_product_prices_task(
             instance_id,
             wcapi
         )
-        
+
         if result.success:
             logger.info(
                 f"Successfully synced prices for product {odoo_product_id}: "
@@ -118,9 +113,10 @@ def sync_product_prices_task(
                 'message': result.message,
                 'error': result.error_details
             }
-                
+
     except Exception as e:
-        logger.error(f"Error in price sync task for product {odoo_product_id}: {e}")
+        logger.error(
+            f"Error in price sync task for product {odoo_product_id}: {e}")
         # Retry the task
         raise self.retry(exc=e)
     finally:
@@ -142,7 +138,7 @@ def sync_all_product_prices_task(
 ):
     """
     Celery task to sync prices for all products in an instance.
-    
+
     Args:
         instance_id: WooCommerce instance ID
         product_ids: Optional list of specific product IDs
@@ -155,19 +151,22 @@ def sync_all_product_prices_task(
             f"[PRICELIST TASK] Starting bulk price sync for instance {instance_id}, "
             f"products: {product_ids or 'all'}"
         )
-        logger.info(f"[PRICELIST TASK] Odoo config present: {odoo_config is not None}")
-        logger.info(f"[PRICELIST TASK] WC config present: {wc_config is not None}")
-        
+        logger.info(
+            f"[PRICELIST TASK] Odoo config present: {odoo_config is not None}")
+        logger.info(
+            f"[PRICELIST TASK] WC config present: {wc_config is not None}")
+
         # Use provided config or fallback to settings
         if not odoo_config:
-            logger.info("[PRICELIST TASK] Using default Odoo config from settings")
+            logger.info(
+                "[PRICELIST TASK] Using default Odoo config from settings")
             odoo_config = {
                 "url": settings.odoo_url,
                 "db": settings.odoo_db,
                 "username": settings.odoo_username,
                 "password": settings.odoo_password
             }
-        
+
         odoo_client = OdooClient(
             odoo_config["url"],
             odoo_config["db"],
@@ -175,30 +174,33 @@ def sync_all_product_prices_task(
             odoo_config["password"]
         )
         logger.info("[PRICELIST TASK] OdooClient created successfully")
-        
+
         wcapi = create_wc_api_client(wc_config)
-        logger.info("[PRICELIST TASK] WooCommerce API client created successfully")
-        
+        logger.info(
+            "[PRICELIST TASK] WooCommerce API client created successfully")
+
         service = PricelistService(db)
-        logger.info("[PRICELIST TASK] PricelistService created, calling sync_all_product_prices")
-        
+        logger.info(
+            "[PRICELIST TASK] PricelistService created, calling sync_all_product_prices")
+
         results = service.sync_all_product_prices(
             odoo_client,
             instance_id,
             product_ids,
             wcapi
         )
-        
+
         logger.info(
             f"[PRICELIST TASK] Bulk price sync completed for instance {instance_id}: "
             f"Total: {results['total']}, "
             f"{results['successful']} successful, {results['failed']} failed"
         )
-        
+
         return results
-            
+
     except Exception as e:
-        logger.error(f"Error in bulk price sync task for instance {instance_id}: {e}")
+        logger.error(
+            f"Error in bulk price sync task for instance {instance_id}: {e}")
         raise self.retry(exc=e)
     finally:
         db.close()
@@ -217,16 +219,16 @@ def scheduled_price_sync_task(self):
     db = SessionLocal()
     try:
         logger.info("Running scheduled price sync for all instances")
-        
+
         # Get all active instances
         from app.models.admin import WooCommerceInstance
         instances = db.query(WooCommerceInstance).filter(
             WooCommerceInstance.active == True
         ).all()
-        
+
         for instance in instances:
             logger.info(f"Syncing prices for instance {instance.id}")
-            
+
             # Prepare configs
             odoo_config = {
                 "url": settings.odoo_url,
@@ -239,16 +241,17 @@ def scheduled_price_sync_task(self):
                 "consumer_key": instance.woocommerce_consumer_key,
                 "consumer_secret": instance.woocommerce_consumer_secret
             }
-            
+
             sync_all_product_prices_task.delay(
                 instance.id,
                 odoo_config=odoo_config,
                 wc_config=wc_config
             )
-        
-        logger.info(f"Scheduled price sync queued for {len(instances)} instances")
+
+        logger.info(
+            f"Scheduled price sync queued for {len(instances)} instances")
         return {'success': True, 'instances': len(instances)}
-        
+
     except Exception as e:
         logger.error(f"Error starting scheduled price sync: {e}")
         raise
@@ -261,16 +264,16 @@ def fetch_odoo_pricelists_task(odoo_config: dict = None):
     """
     Fetch all active pricelists from Odoo.
     Useful for populating pricelist selection in UI.
-    
+
     Args:
         odoo_config: Odoo configuration dict (url, db, username, password)
-        
+
     Returns:
         List of pricelists from Odoo
     """
     try:
         logger.info("Fetching pricelists from Odoo")
-        
+
         # Use provided config or fallback to settings
         if not odoo_config:
             odoo_config = {
@@ -279,7 +282,7 @@ def fetch_odoo_pricelists_task(odoo_config: dict = None):
                 "username": settings.odoo_username,
                 "password": settings.odoo_password
             }
-        
+
         odoo_client = OdooClient(
             odoo_config["url"],
             odoo_config["db"],
@@ -291,10 +294,10 @@ def fetch_odoo_pricelists_task(odoo_config: dict = None):
             domain=[('active', '=', True)],
             fields=['id', 'name', 'currency_id', 'active']
         )
-        
+
         logger.info(f"Found {len(pricelists)} active pricelists in Odoo")
         return pricelists
-        
+
     except Exception as e:
         logger.error(f"Error fetching Odoo pricelists: {e}")
         return []

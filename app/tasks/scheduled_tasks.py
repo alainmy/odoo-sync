@@ -41,11 +41,6 @@ class DatabaseTask(Task):
         finally:
             self.db.close()
 
-    def after_return(self, *args, **kwargs):
-        if self._db is not None:
-            self._db.close()
-            self._db = None
-
 
 @celery_app.task(
     bind=True,
