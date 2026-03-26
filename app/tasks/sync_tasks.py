@@ -1,9 +1,8 @@
 """
 Celery tasks for synchronization operations between WooCommerce and Odoo.
 """
-from pyexpat import model
-from uuid import uuid4
 import logging
+from math import log
 import os
 from typing import Dict, Any, List, Optional, Tuple
 from celery import Task
@@ -38,6 +37,7 @@ from app.models.user_model import ClientSync
 from app.repositories.client_sync_repository import ClientSyncRepository
 from app.services.odoo_service import create_customer_in_odoo
 from app.services.woocommerce.client import wc_request_with_logging
+from app.crud.odoo_order import OrderClient
 
 
 logger = logging.getLogger(__name__)
@@ -1254,6 +1254,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             "completed": "sale",
             "on-hold": "draft",
             "processing": "sent",
+            "pending": "draft",
             "cancelled": "cancel",
             "checkout-draft": "draft"
         }
@@ -1274,7 +1275,12 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             fields=["id", 'state'],
             limit=1
         )
-
+        order_client = OrderClient(
+            instance.odoo_url,
+            instance.odoo_db,
+            instance.odoo_username,
+            instance.odoo_password
+        )
         if existing_orders:
             logger.info(
                 f"Order already exists in Odoo: {existing_orders[0]['id']}")
@@ -1285,11 +1291,17 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             # Orders in other states (sent, sale, done, cancelled) have restrictions
             if order_state == 'draft':
                 try:
-                    client.write(
+                    order_client.write(
                         model='sale.order',
                         vals=sale_order_data,
                         record_id=order_id
                     )
+                    if order_data["status"] == "completed":
+                        order_client.cal_method(
+                            model='sale.order',
+                            metod='action_confirm',
+                            params=[order_id]
+                        )
                     logger.info(
                         f"Updated existing order in draft state: {order_id}")
                     action = "updated"
@@ -1298,6 +1310,86 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                         f"Failed to update order {order_id}: {update_exc}. "
                         f"Order will remain unchanged."
                     )
+                    message = f"Order update failed: {update_exc}"
+
+                    order_client.message_post(
+                        model='sale.order',
+                        record_id=order_id,
+                        body=message
+                    )
+                    action = "existing"
+            elif order_state in ['sent', 'sale']:
+                logger.info(
+                    f"Order {order_id} is in '{order_state}' state. "
+                    f"Attempting to update note and order lines only."
+                )
+                try:
+                    # Update note
+                    if order_data["status"] in ["pending", "processing", "on-hold"]:
+                        logger.info(
+                            f"Order {order_id} status is '{order_data['status']}', ensuring it is in draft state for update.")
+                        message = f"This order changed its state in WooCommerce."
+                        order_client.message_post(
+                            model='sale.order',
+                            record_id=order_id,
+                            body=message
+                        )
+                        # logger.info(f"Cancelling order {order_id} to allow updates.")
+                        # to_cancel = order_client.cal_method(
+                        #     model='sale.order',
+                        #     metod='action_cancel',
+                        #     params=[order_id]
+                        # )
+                        # order_client.write(
+                        #     model='sale.order',
+                        #     vals={"note": sale_order_data["note"]},
+                        #     record_id=order_id
+                        # )
+                        # logger.info(f"Order {order_id} cancelled: {to_cancel}")
+                        # logger.info(f"Converting order {order_id} to draft state.")
+                        # to_draft = order_client.cal_method(
+                        #     model='sale.order',
+                        #     metod='action_draft',
+                        #     params=[order_id]
+                        # )
+                        # logger.info(f"Order {order_id} converted to draft state.{to_draft}")
+                    if order_data["status"] == "cancelled":
+                        logger.info(
+                            f"Order {order_id} status is 'cancelled', cancelling order in Odoo.")
+                        message = f"This order was cancelled in WooCommerce. Cancelling in Odoo as well."
+                        order_client.message_post(
+                            model='sale.order',
+                            record_id=order_id,
+                            body=message
+                        )
+                        # order_client.cal_method(
+                        #     model='sale.order',
+                        #     metod='action_cancel',
+                        #     params=[order_id]
+                        # )
+                        # logger.info(f"Order {order_id} status is 'cancelled', updating note in Odoo.")
+                        # order_client.write(
+                        #     model='sale.order',
+                        #     vals={"note": sale_order_data["note"]},
+                        #     record_id=order_id
+                        # )
+                    # Update order lines - this is more complex and may require custom logic
+                    # For simplicity, we will not update order lines for non-draft orders in this example
+                    logger.info(
+                        f"Updated note for order {order_id} in '{order_state}' state. Order lines remain unchanged.")
+                    action = "updated_note"
+                except Exception as update_exc:
+                    logger.warning(
+                        f"Failed to update order {order_id}: {update_exc}. "
+                        f"Order will remain unchanged."
+                    )
+                    message = f"Order update failed: {update_exc}"
+                    order_client.message_post(
+                        model='sale.order',
+                        record_id=order_id,
+                        body=message
+                    )
+
                     action = "existing"
             else:
                 logger.info(
@@ -1308,7 +1400,14 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
         else:
             logger.info(
                 f"Creating new sale order in Odoo for WooCommerce order {wc_order_id}")
-            order_id = client.create(model="sale.order", vals=sale_order_data)
+            order_id = order_client.create(
+                model="sale.order", vals=sale_order_data)
+            if sale_order_data["state"] == "completed":
+                order_client.cal_method(
+                    model='sale.order',
+                    metod='action_confirm',
+                    params=[order_id]
+                )
             logger.info(
                 f"Created new sale order in Odoo with ID {order_id}")
             action = "created"

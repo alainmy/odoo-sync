@@ -261,6 +261,9 @@ async def batch_sync_products(
             # get url images
             if instance.product_descriptions == "description_sale":
                 product["description"] = product.pop("description_sale", "")
+            product.update({
+                "is_published": request_data.publish_roduct
+            })
             task = sync_product_to_woocommerce.apply_async(
                 args=[product, instance_id],
                 kwargs={

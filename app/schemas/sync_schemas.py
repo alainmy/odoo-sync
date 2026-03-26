@@ -67,6 +67,7 @@ class BatchSyncRequest(BaseModel):
     force_sync: bool = Field(default=False, description="Force sync even if already synced")
     create_if_not_exists: bool = Field(default=True, description="Create in WooCommerce if doesn't exist")
     update_existing: bool = Field(default=True, description="Update existing WooCommerce products")
+    publish_roduct: bool = Field(default=False, description="Publish or not the product in woocommerce")
 
 
 class BatchSyncResponse(BaseModel):
