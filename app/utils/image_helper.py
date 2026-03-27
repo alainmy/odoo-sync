@@ -59,9 +59,9 @@ class ImageHelper:
                 if os.path.exists(file_path):
                     os.remove(file_path)
                     logger.info(f"Imagen eliminada: {file_path}")
-            else:
-                logger.warning(
-                    f"Archivo no encontrado para eliminación: {file_path}")
+                else:
+                    logger.warning(
+                        f"Archivo no encontrado para eliminación: {file_path}")
         except Exception as e:
             logger.error(f"Error eliminando imagen local: {e}", exc_info=True)
 
