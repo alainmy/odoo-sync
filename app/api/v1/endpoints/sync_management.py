@@ -52,6 +52,7 @@ async def list_odoo_products_with_sync_status(
         None, description="Search by product name or SKU"),
     category_id: Optional[int] = Query(
         None, description="Filter by Odoo category ID"),
+    tag_ids: Optional[list] = Query(None, description="tags"),
     request: Request = None,
     db: Session = Depends(get_db),
     odoo: OdooClient = Depends(get_odoo_from_active_instance),
@@ -80,7 +81,8 @@ async def list_odoo_products_with_sync_status(
             domain.append(["default_code", "ilike", search])
         if category_id:
             domain.append(["categ_id", "=", category_id])
-
+        if tag_ids:
+            domain.append(["product_tag_ids", "in", tag_ids])
         domain.append(["sale_ok", "=", True])
         # Fetch from Odoo (over-fetch to account for status filtering)
         # If filtering by status, we need more products since some will be filtered out
@@ -188,7 +190,6 @@ async def batch_sync_products(
     try:
         odoo_ids = request_data.odoo_ids
         logger.info(f"Starting batch sync for {len(odoo_ids)} products")
-
         # Authenticate with Odoo
         uid = await odoo.odoo_authenticate()
 

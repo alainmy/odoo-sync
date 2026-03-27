@@ -1291,17 +1291,18 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             # Orders in other states (sent, sale, done, cancelled) have restrictions
             if order_state == 'draft':
                 try:
-                    order_client.write(
-                        model='sale.order',
-                        vals=sale_order_data,
-                        record_id=order_id
-                    )
+
                     if order_data["status"] == "completed":
                         order_client.cal_method(
                             model='sale.order',
                             metod='action_confirm',
                             params=[order_id]
                         )
+                    order_client.write(
+                        model='sale.order',
+                        vals=sale_order_data,
+                        record_id=order_id
+                    )
                     logger.info(
                         f"Updated existing order in draft state: {order_id}")
                     action = "updated"
@@ -1328,7 +1329,16 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                     if order_data["status"] in ["pending", "processing", "on-hold"]:
                         logger.info(
                             f"Order {order_id} status is '{order_data['status']}', ensuring it is in draft state for update.")
-                        message = f"This order changed its state in WooCommerce."
+                        message = f"There are inconsitens in the status order of off woocommerce and odoo."
+                        update_order = wc_request_with_logging(
+                            "POST",
+                            f"orders/{wc_order_id}/notes",
+                            params={
+                                "note": message
+                            },
+                            wcapi=wcapi,
+                        )
+                        logger.info(f"Send a note to WOO {update_order['author']}")
                         order_client.message_post(
                             model='sale.order',
                             record_id=order_id,
