@@ -12,16 +12,22 @@ class ImageHelper:
     image_dir: str = settings.image_dir
     fast_api_host: str = settings.fast_api_host
     allowed_mime_types = ("image/jpeg", "image/png", "image/webp")
+    session_id = None
 
     def __init__(self, image_dir: str = None,
                  fast_api_host: str = None,
-                 allowed_mime_types: tuple = None) -> None:
+                 allowed_mime_types: tuple = None,
+                 session_id: str = None) -> None:
         if image_dir:
             self.image_dir = image_dir
         if fast_api_host:
             self.fast_api_host = fast_api_host
         if allowed_mime_types:
             self.allowed_mime_types = allowed_mime_types
+        if session_id:
+            self.session_id = session_id
+
+    # def web_authentication(self, instance):
 
     def download_and_save_image(self, url: str) -> dict:
 
@@ -30,7 +36,8 @@ class ImageHelper:
             "Accept": "image/*",
         }
 
-        with requests.get(url, headers=headers, stream=True, timeout=60, cookies={"session_id": "abc123"}) as r:
+        with requests.get(url, headers=headers, stream=True, timeout=60,
+                          cookies={"session_id": self.session_id}) as r:
             r.raise_for_status()
             content_type = r.headers.get("Content-Type", "")
             if content_type not in self.allowed_mime_types:

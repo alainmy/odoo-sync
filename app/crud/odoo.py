@@ -43,6 +43,18 @@ class OdooClient:
         self.password = password if password else ODOO_PASSWORD
         self.context = context if context else self.context
 
+    def web_authentication(self, base_url):
+        
+        response = requests.post(
+            f'{base_url}/web/session/authenticate',
+            json={
+                "jsonrpc": "2.0",
+                "method": "call",
+                "params": {"db": self.db, "login": self.username, "password": self.password}
+            }
+        )
+        return response
+
     async def odoo_authenticate(self):
         payload = {
             "jsonrpc": "2.0",
