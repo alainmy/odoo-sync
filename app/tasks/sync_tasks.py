@@ -579,8 +579,9 @@ def sync_product_to_woocommerce(
         normalized_data = {}
         # logger.info(f"Normalizing Odoo product data: {odoo_product_data}")
 
-        session_id = odoo_client.web_authentication(odoo_client.url)
-        image_helper = ImageHelper(session_id=session_id)
+        auth = odoo_client.web_authentication(odoo_client.url)
+        cookies = auth.cookies.get_dict()
+        image_helper = ImageHelper(session_id=cookies["session_id"])
         image_urls = []
         images_to_cleanup = []
         if 'image_1920' in odoo_product_data and odoo_product_data['image_1920'] \
