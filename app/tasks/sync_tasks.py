@@ -674,7 +674,6 @@ def sync_product_to_woocommerce(
             else:
                 normalized_data[key] = value
         logger.info(f"IMAGES URLS: {normalized_data['image_urls']}")
-        normalized_data["image_urls"] = []
         # Generate globally unique slug: name + odoo_id + instance_id
         # This prevents slug conflicts across multiple instances
         base_slug = normalized_data["name"].replace(" ", "-").lower()
@@ -921,13 +920,11 @@ def full_product_sync_wc_to_odoo(
 
             # Fetch products from WooCommerce using instance-specific config
             if wcapi:
-                response = wcapi.get("products", params={
-                                     "page": page, "per_page": per_page})
+                response = wc_request_with_logging(
+                    "GET", "products",
+                    wcapi=wcapi
+                )
                 data = response.json() if hasattr(response, 'json') else response
-            else:
-                data = wc_request("GET", "products",
-                                  params={"page": page, "per_page": per_page})
-
             if not data:
                 break
 
@@ -936,7 +933,8 @@ def full_product_sync_wc_to_odoo(
                 try:
                     # Queue individual sync task
                     result = sync_product_to_odoo.apply_async(
-                        args=[raw_product],
+                        args=[raw_product, instance_id],
+                        queue="sync_queue",
                         retry=True,
                         headers={"parent_task_id": self.request.id}
                     )
@@ -978,6 +976,139 @@ def full_product_sync_wc_to_odoo(
 
     except Exception as exc:
         logger.error(f"Error in full product sync: {exc}")
+        return {
+            "success": False,
+            "total_processed": total_processed,
+            "created": total_created,
+            "updated": total_updated,
+            "errors": total_errors + 1,
+            "status": "error",
+            "error": str(exc)
+        }
+
+
+@celery_app.task(
+    bind=True,
+    base=DatabaseTask,
+    name="app.tasks.sync_tasks.full_order_sync_wc_to_odoo",
+    max_retries=1
+)
+@log_celery_task_with_retry
+def full_order_sync_wc_to_odoo(
+    self,
+    instance_id: int,
+    odoo_config: Dict[str, str] = None,
+    wc_config: Dict[str, str] = None
+) -> Dict[str, Any]:
+    """
+    Perform full order catalog sync from WooCommerce to Odoo for a specific instance.
+
+    Args:
+        instance_id: WooCommerce instance ID
+        odoo_config: Odoo configuration dict (url, db, username, password)
+        wc_config: WooCommerce configuration dict (url, consumer_key, consumer_secret)
+
+    Returns:
+        Dict with sync statistics
+    """
+    page = 1
+    per_page = 50
+    total_processed = 0
+    total_created = 0
+    total_updated = 0
+    total_errors = 0
+
+    try:
+        logger.info(
+            f"Starting full order sync: WooCommerce -> Odoo (instance {instance_id})")
+
+        # Use default config if not provided
+        if not odoo_config:
+            odoo_config = {
+                "url": settings.odoo_url,
+                "db": settings.odoo_db,
+                "username": settings.odoo_username,
+                "password": settings.odoo_password
+            }
+
+        # Create WooCommerce API client
+        wcapi = create_wc_api_client(wc_config)
+
+        while True:
+            # Update task state
+            self.update_state(
+                state='PROGRESS',
+                meta={
+                    'current': total_processed,
+                    'status': f'Processing page {page}'
+                }
+            )
+
+            # Fetch products from WooCommerce using instance-specific config
+            data = None
+            if wcapi:
+                response = wc_request_with_logging(
+                    "GET", "orders",
+                    params={
+                        "order": "asc",
+                        "status": "completed"},
+                    wcapi=wcapi
+                )
+                data = response
+
+            if not data:
+                break
+
+            # Process each product
+            for raw_order in data:
+                try:
+                    # Queue individual sync task
+                    logger.info(f"ORDER DATA: {raw_order}")
+                    logger.info(f"instance: {instance_id}")
+                    result = sync_order_to_odoo.apply_async(
+                        args=[raw_order, instance_id],
+                        queue='sync_queue',
+                        retry=True,
+                        headers={"parent_task_id": self.request.id}
+                    )
+
+                    # Wait for result (with timeout)
+                    task_result = result.get(timeout=60)
+
+                    if task_result.get("success"):
+                        if task_result.get("action") == "created":
+                            total_created += 1
+                        elif task_result.get("action") == "updated":
+                            total_updated += 1
+                    else:
+                        total_errors += 1
+
+                    total_processed += 1
+
+                except Exception as e:
+                    logger.error(
+                        f"Error processing product {raw_order.get('id')}: {e}")
+                    total_errors += 1
+                    total_processed += 1
+
+            page += 1
+
+        logger.info(
+            f"Full sync completed: {total_processed} processed, "
+            f"{total_created} created, {total_updated} updated, {total_errors} errors"
+        )
+
+        return {
+            "success": True,
+            "total_processed": total_processed,
+            "created": total_created,
+            "updated": total_updated,
+            "errors": total_errors,
+            "status": "completed"
+        }
+
+    except Exception as exc:
+        logger.error(f"Error in full order sync: {exc}")
         return {
             "success": False,
             "total_processed": total_processed,
@@ -1338,7 +1469,8 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                             },
                             wcapi=wcapi,
                         )
-                        logger.info(f"Send a note to WOO {update_order['author']}")
+                        logger.info(
+                            f"Send a note to WOO {update_order['author']}")
                         order_client.message_post(
                             model='sale.order',
                             record_id=order_id,

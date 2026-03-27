@@ -8,7 +8,7 @@ from celery.schedules import crontab
 from app.celery_app import celery_app
 from app.core.config import settings
 from app.db.session import SessionLocal
-from app.tasks.sync_tasks import full_product_sync_wc_to_odoo
+from app.tasks.sync_tasks import full_order_sync_wc_to_odoo, full_product_sync_wc_to_odoo
 from app.tasks.webhook_tasks import cleanup_old_webhooks
 from app.tasks.task_logger import log_celery_task
 from app.tasks.task_monitoring import cleanup_old_task_logs
@@ -130,6 +130,148 @@ def schedule_multi_instance_product_sync(self) -> Dict[str, Any]:
                     headers={"parent_task_id": self.request.id}
                 )
 
+                task_ids.append({
+                    "instance_id": instance.id,
+                    "instance_name": instance.name,
+                    "task_id": result.id
+                })
+
+                queued_count += 1
+                logger.info(
+                    f"Queued sync for instance {instance.id} "
+                    f"({instance.name}): task_id={result.id}"
+                )
+
+            except Exception as e:
+                error_count += 1
+                logger.error(
+                    f"Error queuing sync for instance {instance.id} "
+                    f"({instance.name}): {e}",
+                    exc_info=True
+                )
+                # Send alert for critical errors
+                send_task_error_alert(
+                    task_name='schedule_multi_instance_product_sync',
+                    error=e,
+                    task_id=self.request.id,
+                    instance_id=instance.id,
+                    retries=0,
+                    max_retries=1
+                )
+
+        logger.info(
+            f"Multi-instance sync scheduling completed: "
+            f"{queued_count} queued, {skipped_count} skipped, "
+            f"{error_count} errors"
+        )
+
+        return {
+            "success": True,
+            "total_instances": total_instances,
+            "queued": queued_count,
+            "skipped": skipped_count,
+            "errors": error_count,
+            "task_ids": task_ids
+        }
+
+    except Exception as exc:
+        logger.error(
+            f"Error in multi-instance sync scheduler: {exc}",
+            exc_info=True
+        )
+        return {
+            "success": False,
+            "error": str(exc)
+        }
+
+@celery_app.task(
+    bind=True,
+    base=DatabaseTask,
+    name="app.tasks.scheduled_tasks.schedule_multi_instance_order_sync"
+)
+@log_celery_task
+def schedule_multi_instance_order_sync(self) -> Dict[str, Any]:
+    """
+    Scheduled task to trigger product sync for all active instances.
+    Iterates through all users' active instances and queues individual
+    sync tasks. Runs every 15 minutes (configured in celery_app.py).
+
+    Returns:
+        Dict with scheduling statistics
+    """
+    try:
+        logger.info("Starting multi-instance product sync scheduler")
+
+        # Get repository
+        instance_repo = InstanceRepository(self.db)
+
+        # Get all active instances with auto_sync enabled
+        active_instances = instance_repo.get_active_instances()
+
+        total_instances = len(active_instances)
+        queued_count = 0
+        skipped_count = 0
+        error_count = 0
+        task_ids = []
+
+        logger.info(f"Found {total_instances} active instances")
+
+        for instance in active_instances:
+            try:
+                # Check if auto_sync_products is enabled for this instance
+                if not instance.auto_sync_products:
+                    logger.info(
+                        f"Skipping instance {instance.id} ({instance.name}): "
+                        f"auto_sync_products is disabled"
+                    )
+                    skipped_count += 1
+                    continue
+
+                # Build instance-specific configurations
+                odoo_config = {
+                    "url": instance.odoo_url,
+                    "db": instance.odoo_db,
+                    "username": instance.odoo_username,
+                    "password": instance.odoo_password,
+                }
+
+                wc_config = {
+                    "url": instance.woocommerce_url,
+                    "consumer_key": instance.woocommerce_consumer_key,
+                    "consumer_secret": instance.woocommerce_consumer_secret,
+                }
+                # Validate configurations
+                if not all([odoo_config["url"], odoo_config["db"],
+                           odoo_config["username"],
+                           odoo_config["password"]]):
+                    logger.info(
+                        f"Skipping instance {instance.id} "
+                        f"({instance.name}): Incomplete Odoo config"
+                    )
+                    skipped_count += 1
+                    continue
+
+                if not all([wc_config["url"],
+                           wc_config["consumer_key"],
+                           wc_config["consumer_secret"]]):
+                    logger.info(
+                        f"Skipping instance {instance.id} "
+                        f"({instance.name}): Incomplete WC config"
+                    )
+                    skipped_count += 1
+                    continue
+
+                # Queue sync task for this instance
+                result = full_order_sync_wc_to_odoo.apply_async(
+                    kwargs={
+                        "instance_id": instance.id,
+                        "odoo_config": odoo_config,
+                        "wc_config": wc_config
+                    },
+                    queue='sync_queue',
+                    headers={"parent_task_id": self.request.id}
+                )
+                logger.info(f"Se envio la tarea")
                 task_ids.append({
                     "instance_id": instance.id,
                     "instance_name": instance.name,

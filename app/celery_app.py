@@ -2,6 +2,7 @@
 Celery application configuration for WooCommerce-Odoo sync microservice.
 """
 from celery import Celery
+from celery.schedules import crontab
 from app.core.config import settings
 
 # Create Celery instance
@@ -122,6 +123,13 @@ celery_app.conf.beat_schedule = {
             'schedule_multi_instance_product_sync'
         ),
         'schedule': 900.0,  # 15 minutes in seconds
+    },
+    'multi-instance-order-sync-every-15-minutes': {
+        'task': (
+            'app.tasks.scheduled_tasks.'
+            'schedule_multi_instance_order_sync'
+        ),
+        'schedule': crontab(minute="*/30"),  # 15 minutes in seconds
     },
     'auto-sync-stock-every-30-minutes': {
         'task': 'app.tasks.scheduled_tasks.auto_sync_stock',
