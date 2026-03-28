@@ -44,7 +44,7 @@ class OdooClient:
         self.context = context if context else self.context
 
     def web_authentication(self, base_url):
-        
+
         response = requests.post(
             f'{base_url}/web/session/authenticate',
             json={

@@ -191,7 +191,6 @@ async def batch_sync_products(
         odoo_ids = request_data.odoo_ids
         logger.info(f"Starting batch sync for {len(odoo_ids)} products")
         # Authenticate with Odoo
-        auth = odoo.web_authentication(odoo.url)
         uid = await odoo.odoo_authenticate()
 
         # Fetch products from Odoo

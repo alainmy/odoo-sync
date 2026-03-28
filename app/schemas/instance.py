@@ -24,6 +24,8 @@ class WooCommerceInstanceBase(BaseModel):
     odoo_language: Optional[str] = "en_US"
     product_descriptions: Optional[str] = None
     price_list_id: Optional[int] = None
+    auto_sync_products: Optional[bool] = False
+    auto_sync_orders: Optional[bool] = False
 
 
 class WooCommerceInstanceCreate(WooCommerceInstanceBase):
@@ -43,6 +45,8 @@ class WooCommerceInstanceUpdate(BaseModel):
     odoo_language: Optional[str] = None
     product_descriptions: Optional[str] = None
     price_list_id: Optional[int] = None
+    auto_sync_products: Optional[bool] = False
+    auto_sync_orders: Optional[bool] = False
 
 
 class WooCommerceInstance(WooCommerceInstanceBase):

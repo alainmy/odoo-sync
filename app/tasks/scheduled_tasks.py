@@ -372,7 +372,7 @@ def auto_sync_stock(self) -> Dict[str, Any]:
 
                 # Find WooCommerce product by SKU
                 wc_products = wc_request(
-                    "GET", "/products", params={"sku": sku})
+                    "GET", "products", params={"sku": sku})
 
                 if wc_products:
                     wc_product_id = wc_products[0]["id"]
@@ -380,7 +380,7 @@ def auto_sync_stock(self) -> Dict[str, Any]:
                     # Update stock in WooCommerce
                     wc_request(
                         "PUT",
-                        f"/products/{wc_product_id}",
+                        f"products/{wc_product_id}",
                         params={"stock_quantity": qty}
                     )
 
