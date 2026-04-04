@@ -1366,6 +1366,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                     domain=[("id", "=", product_sync.odoo_id)],
                     fields=["id"]
                 )
+                logger.info(f"Found product in Odoo for sync record {product_sync.odoo_id}: {products}")
                 if products:
                     product_id = products[0]["id"]
 
