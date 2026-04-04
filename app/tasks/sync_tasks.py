@@ -446,7 +446,40 @@ def sync_product_to_odoo(self,
                 "success": False,
                 "error": f"Instance {instance_id} not found"
             }
-
+        if delete:
+            sync_product = self.db.query(ProductSync).filter(
+                ProductSync.woocommerce_id == product_data.get("id"),
+                ProductSync.instance_id == instance_id
+            ).first()
+            if sync_product:
+                variant_product_syncs = self.db.query(ProductVariantSync).filter(
+                    ProductVariantSync.woocommerce_id == product_data.get(
+                        "id"),
+                    ProductVariantSync.instance_id == instance_id,
+                    ProductVariantSync.product_tpl_id == sync_product.id
+                ).all()
+                for variant_sync in variant_product_syncs:
+                    self.db.delete(variant_sync)
+                    logger.info(
+                        f"Deleted variant sync record {variant_sync.id} for WooCommerce product ID {product_data.get('id')}")
+                    self.db.commit()
+                self.db.delete(sync_product)
+                self.db.commit()
+                logger.info(
+                    f"Deleted sync record for WooCommerce product ID {product_data.get('id')}")
+            # else:
+            #     logger.info(f"No sync record found for WooCommerce product ID {product_data.get('id')}, nothing to delete")
+            #     variant_product_syncs = self.db.query(ProductVariantSync).filter(
+            #         ProductVariantSync.woocommerce_id == product_data.get("id"),
+            #         ProductVariantSync.instance_id == instance_id
+            #     ).all()
+            return {
+                "success": True if sync_product else False,
+                "action": "deleted",
+                "odoo_id": None,
+                "woocommerce_id": product_data.get("id"),
+                "sku": product_data.get("sku")
+            }
         # Initialize Odoo client with instance configuration
         client = OdooClient(
             instance.odoo_url,
@@ -1353,22 +1386,27 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                         "variation_id"),
                     ProductVariantSync.instance_id == instance_id
                 ).first()
-                logger.info(f"Found variant sync record: {product_sync.odoo_id if product_sync else 'None'} for variation_id {line.get('variation_id')}")
+                logger.info(
+                    f"Found variant sync record: {product_sync.odoo_id if product_sync else 'None'} for variation_id {line.get('variation_id')}")
             else:
                 product_sync = self.db.query(ProductSync).filter(
                     ProductSync.woocommerce_id == line.get("product_id"),
                     ProductSync.instance_id == instance_id
                 ).first()
-                logger.info(f"Searching for product sync record for product_id {line.get('product_id')}: {product_sync.odoo_id if product_sync else 'None'}")
+                logger.info(
+                    f"Searching for product sync record for product_id {line.get('product_id')}: {product_sync.odoo_id if product_sync else 'None'}")
             if product_sync:
                 products = client.search_read_sync(
-                    "product.product" if line.get("variation_id") != 0 else "product.template",
+                    "product.product" if line.get(
+                        "variation_id") != 0 else "product.template",
                     domain=[("id", "=", product_sync.odoo_id)],
-                    fields=["id","product_variant_id"]
+                    fields=["id", "product_variant_id"]
                 )
-                logger.info(f"Found product in Odoo for sync record {product_sync.odoo_id}: {products}")
+                logger.info(
+                    f"Found product in Odoo for sync record {product_sync.odoo_id}: {products}")
                 if products:
-                    product_id = products[0]["product_variant_id"][0] if line.get("variation_id") == 0 else products[0]["id"]
+                    product_id = products[0]["product_variant_id"][0] if line.get(
+                        "variation_id") == 0 else products[0]["id"]
 
             # Fallback: search by SKU
             if not product_id:

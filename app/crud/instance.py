@@ -8,6 +8,8 @@ from typing import List, Optional
 from app.models.webhook_models import WebhookConfig
 from app.repositories.webhook_config_repository import WebhookConfigRepository
 from app.schemas.webhook_schemas import WebhookConfigCreate
+from app.core.config import settings
+
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +84,7 @@ def create_hook_for_instance(db: Session,
                              ) -> None:
     """Crear un webhook para eliminar productos en WooCommerce"""
     repo = WebhookConfigRepository(db)
-    delivery_url = f"https://diphthongous-ponderingly-hilaria.ngrok-free.dev{url_template.format(instance_id=instance.id, topic=topic)}"
+    delivery_url = f"{settings.webhook_url}{url_template.format(instance_id=instance.id, topic=topic)}"
     config = WebhookConfigCreate(
         instance_id=instance.id,
         name=name,

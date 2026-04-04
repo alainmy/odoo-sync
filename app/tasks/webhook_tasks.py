@@ -176,6 +176,7 @@ def process_webhook(
             # Sync product to Odoo using instance configuration
             task_result = sync_product_to_odoo.apply_async(
                 args=[payload, instance_id],
+                kwargs={"delete": event_type == "product.deleted"},
                 retry=True,
                 queue='sync_queue',
                 headers={'parent_task_id': self.request.id}
