@@ -707,8 +707,6 @@ def sync_product_to_woocommerce(
                     logger.info(f"Processing image_urls field: {value}")
                 else:
                     normalized_data[key] = value
-            else:
-                normalized_data[key] = value
         logger.info(f"IMAGES URLS: {normalized_data['image_urls']}")
         logger.info(f"NORMALIZED DATA: {odoo_product_data}")
         # normalized_data["image_urls"] = []
