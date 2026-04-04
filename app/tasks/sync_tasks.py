@@ -1362,7 +1362,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                 logger.info(f"Searching for product sync record for product_id {line.get('product_id')}: {product_sync.odoo_id if product_sync else 'None'}")
             if product_sync:
                 products = client.search_read_sync(
-                    "product.product",
+                    "product.product" if line.get("variation_id") != 0 else "product.template",
                     domain=[("id", "=", product_sync.odoo_id)],
                     fields=["id"]
                 )
