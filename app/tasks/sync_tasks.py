@@ -1364,11 +1364,11 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                 products = client.search_read_sync(
                     "product.product" if line.get("variation_id") != 0 else "product.template",
                     domain=[("id", "=", product_sync.odoo_id)],
-                    fields=["id"]
+                    fields=["id","product_variant_id"]
                 )
                 logger.info(f"Found product in Odoo for sync record {product_sync.odoo_id}: {products}")
                 if products:
-                    product_id = products[0]["id"]
+                    product_id = products[0]["product_variant_id"]
 
             # Fallback: search by SKU
             if not product_id:
