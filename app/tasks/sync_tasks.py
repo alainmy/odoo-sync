@@ -584,8 +584,7 @@ def sync_product_to_woocommerce(
         image_helper = ImageHelper(session_id=cookies["session_id"])
         image_urls = []
         images_to_cleanup = []
-        if 'image_1920' in odoo_product_data and odoo_product_data['image_1920'] \
-                and odoo_product_data["is_published"]:
+        if 'image_1920' in odoo_product_data and odoo_product_data['image_1920']:
             product_image, file_path = image_helper.download_and_save_image(
                 f"{odoo_config['url']}/web/image/product.template/{odoo_product_data['id']}/image_1920")
             image_urls.append(product_image)
@@ -671,12 +670,14 @@ def sync_product_to_woocommerce(
                         images_to_cleanup.append(file_path)
                     # Special case for image URLs
                     logger.info(f"Processing image_urls field: {value}")
-
+                elif key == 'is_published':
+                    normalized_data[key] = value
                 else:
                     normalized_data[key] = value
             else:
                 normalized_data[key] = value
         logger.info(f"IMAGES URLS: {normalized_data['image_urls']}")
+        logger.info(f"NORMALIZED DATA: {normalized_data}")
         # normalized_data["image_urls"] = []
         # Generate globally unique slug: name + odoo_id + instance_id
         # This prevents slug conflicts across multiple instances
@@ -785,6 +786,7 @@ def sync_product_to_woocommerce(
         # Convert to WooCommerce format
         wc_product_data = odoo_product_to_woocommerce(
             odoo_product,
+            default_status="publish" if odoo_product.is_published else "draft",
             db=self.db,
             wcapi=wcapi,
             instance_id=instance_id,
@@ -1351,12 +1353,13 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                         "variation_id"),
                     ProductVariantSync.instance_id == instance_id
                 ).first()
+                logger.info(f"Found variant sync record: {product_sync.odoo_id if product_sync else 'None'} for variation_id {line.get('variation_id')}")
             else:
                 product_sync = self.db.query(ProductSync).filter(
                     ProductSync.woocommerce_id == line.get("product_id"),
                     ProductSync.instance_id == instance_id
                 ).first()
-
+                logger.info(f"Searching for product sync record for product_id {line.get('product_id')}: {product_sync.odoo_id if product_sync else 'None'}")
             if product_sync:
                 products = client.search_read_sync(
                     "product.product",

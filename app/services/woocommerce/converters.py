@@ -192,11 +192,12 @@ def odoo_product_to_woocommerce(
         manage_stock=manage_stock,
         stock_quantity=stock_quantity,
         in_stock=odoo_product.active and odoo_product.sale_ok,
-        status=default_status if odoo_product.active else "draft",
+        status=default_status,
         categories=categories,
         attributes=product_attributes,  # Add attributes for variable products,
         tags=tags,
         images=images,
         weight=weight,
-        dimensions=dimensions
+        dimensions=dimensions,
+        status=default_status if odoo_product.is_published else "publish"
     )

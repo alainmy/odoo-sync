@@ -14,6 +14,7 @@ from app.api.v1.endpoints.sync_management import router as sync_management_route
 from app.api.v1.endpoints.category_tag_management import router as category_tag_management_router
 from app.api.v1.endpoints.attributes import router as attributes_router, management_router as attributes_management_router
 from app.api.instances import router as instances_router
+from app.api.v1.endpoints.delivery_methods import router as delivery_methods
 from app.api.v1.endpoints.task_monitoring import router as task_monitoring_router
 from app.api.v1.endpoints.pricelists import router as pricelists_router
 from app.api.v1.endpoints.webhooks import router as webhooks_router
@@ -111,6 +112,7 @@ app.include_router(instances_router, prefix="/api/v1", tags=["instances"])
 app.include_router(pricelists_router, prefix="/api/v1/pricelists", tags=["pricelists"])
 app.include_router(webhooks_router, prefix="/api/v1/webhooks", tags=["webhooks"])
 app.include_router(webhook_receiver_router, prefix="/api/v1/webhook-receiver", tags=["webhook-receiver"])
+app.include_router(delivery_methods, prefix="/api/v1/delivery_methods", tags=["DELIVERY"])
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=5010, reload=True)
