@@ -628,7 +628,7 @@ def sync_product_to_woocommerce(
         logger.info(f"IMAGES URLS: {normalized_data['image_urls']}")
         for key, value in odoo_product_data.items():
             if value is False:
-                normalized_data[key] = None
+                normalized_data[key] = value
             elif isinstance(value, list):
                 if key == 'categ_id' and len(value) == 2:
                     # many2one field [id, name] -> extract both id and name
@@ -693,8 +693,7 @@ def sync_product_to_woocommerce(
                     # Other many2one fields [id, name] -> extract id only
                     normalized_data[key] = value[0]
                 # only process images if product is published
-                elif key == 'product_template_image_ids' and odoo_product_data["is_published"]:
-
+                elif key == 'product_template_image_ids':
                     for img in value:
                         image, file_path = image_helper.download_and_save_image(
                             f"{odoo_config['url']}/web/image/product.image/{img}/image_1920")
@@ -703,8 +702,6 @@ def sync_product_to_woocommerce(
                         images_to_cleanup.append(file_path)
                     # Special case for image URLs
                     logger.info(f"Processing image_urls field: {value}")
-                elif key == 'is_published':
-                    normalized_data[key] = value
                 else:
                     normalized_data[key] = value
             else:
