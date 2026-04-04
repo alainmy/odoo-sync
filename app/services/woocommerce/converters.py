@@ -199,5 +199,4 @@ def odoo_product_to_woocommerce(
         images=images,
         weight=weight,
         dimensions=dimensions,
-        status=default_status if odoo_product.is_published else "publish"
     )
