@@ -627,10 +627,11 @@ def sync_product_to_woocommerce(
             normalized_data["image_urls"] = image_urls
         logger.info(f"IMAGES URLS: {normalized_data['image_urls']}")
         for key, value in odoo_product_data.items():
-            if value is False and key not in ["is_published"]:
-                normalized_data[key] = None
+            
             if key == 'is_published':
                 normalized_data[key] = value
+            elif value is False and key:
+                normalized_data[key] = None
             elif isinstance(value, list):
                 if key == 'categ_id' and len(value) == 2:
                     # many2one field [id, name] -> extract both id and name
