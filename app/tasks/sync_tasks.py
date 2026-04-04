@@ -1368,7 +1368,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                 )
                 logger.info(f"Found product in Odoo for sync record {product_sync.odoo_id}: {products}")
                 if products:
-                    product_id = products[0]["product_variant_id"]
+                    product_id = products[0]["product_variant_id"][0] if line.get("variation_id") == 0 else products[0]["id"]
 
             # Fallback: search by SKU
             if not product_id:
