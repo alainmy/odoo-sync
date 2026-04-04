@@ -630,7 +630,7 @@ def sync_product_to_woocommerce(
             if value is False and key not in ["is_published'"]:
                 normalized_data[key] = None
             elif key == 'is_published':
-                    normalized_data[key] = value
+                normalized_data[key] = value
             elif isinstance(value, list):
                 if key == 'categ_id' and len(value) == 2:
                     # many2one field [id, name] -> extract both id and name
