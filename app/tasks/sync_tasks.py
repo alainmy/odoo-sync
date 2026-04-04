@@ -710,7 +710,7 @@ def sync_product_to_woocommerce(
             else:
                 normalized_data[key] = value
         logger.info(f"IMAGES URLS: {normalized_data['image_urls']}")
-        logger.info(f"NORMALIZED DATA: {normalized_data}")
+        logger.info(f"NORMALIZED DATA: {odoo_product_data}")
         # normalized_data["image_urls"] = []
         # Generate globally unique slug: name + odoo_id + instance_id
         # This prevents slug conflicts across multiple instances
