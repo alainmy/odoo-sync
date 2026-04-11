@@ -12,7 +12,7 @@ from app.crud import instance as crud_instance
 from app.auth.oauth2 import get_current_user
 from app.models.admin import Admin
 from app.crud.odoo import OdooClient
-
+from app.core.config import settings
 router = APIRouter(
     prefix="/instances",
     tags=["instances"]
@@ -128,6 +128,12 @@ def update_instance(
     odoo_description = f"Odoo Version {version_info}\n with modules:\n \n{installed_modules_names}"
     instance_update.odoo_description = odoo_description
     """Actualizar una instancia"""
+
+    # Get or create webhook for update order in WooCommerce
+    odoo_webhook_url_template = "{host}/api/v1/webhook-receiver/odoo/{instance_id}/order_update"
+    webhook = odoo_client.get_webhook_by_url(
+        url=odoo_webhook_url_template.format(host=settings.fast_api_host,
+                                             instance_id=instance_id))
     instance = crud_instance.update_instance(
         db,
         instance_id=instance_id,

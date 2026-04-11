@@ -9,6 +9,8 @@ from app.db.session import get_db
 from app.models.admin import WooCommerceInstance
 from app.services.webhook_processor import WebhookProcessor
 from app.tasks.webhook_tasks import process_webhook
+from app.services.woocommerce.client import wc_request_with_logging
+from app.tasks.sync_helpers import create_wc_api_client
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -256,3 +258,61 @@ def webhook_health_check(instance_id: int, db: Session = Depends(get_db)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
+
+
+# odoo webhook processing flow:
+@router.post("/odoo/{instance_id}/{topic}")
+async def receive_odoo_webhook(
+    instance_id: int,
+    topic: str,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    Endpoint to receive webhooks from Odoo.
+
+    Args:
+        instance_id: WooCommerce instance ID
+        topic: Webhook topic (e.g., product.updated)
+        request: FastAPI request object
+        db: Database session    
+    """
+    body = await request.json()
+    instance = db.query(WooCommerceInstance).filter(
+        WooCommerceInstance.id == instance_id
+    ).first()
+    if not instance:
+        logger.error(f"Instance {instance_id} not found for Odoo webhook")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Instance {instance_id} not found"
+        )
+    if body['delivery_status'] == 'full' \
+            and body['invoice_status'] == 'invoiced':
+        logger.info(f"Received Odoo webhook for instance {instance_id}, topic {topic}, "
+                    f"order {body.get('order_id')} is fully delivered and invoiced. "
+                    f"Triggering WooCommerce order update...")
+        wc_config = {
+            "url": instance.woocommerce_url,
+            "consumer_key": instance.woocommerce_consumer_key,
+            "consumer_secret": instance.woocommerce_consumer_secret,
+        }
+        # Assuming client_order_ref is like "SO-12345"
+        if 'WC-' in body.get('client_order_ref', ''):
+            order_id = body.get('client_order_ref').split('-')[-1]
+            wcapi = create_wc_api_client(wc_config)
+            update_order = wc_request_with_logging(
+                "PUT",
+                f"orders/{order_id}",
+                params={
+                    "status": "completed"
+                },
+                wcapi=wcapi,
+            )
+            logger.info(f"WooCommerce order update response: {update_order}")
+        # Aquí podrías agregar lógica para actualizar el estado del pedido en WooCommerce
+        # o realizar otras acciones según el evento recibido.
+    # For now, just log the received webhook
+    logger.info(
+        f"Received Odoo webhook for instance {instance_id}, topic {topic}")
+    return {"status": "ok", "message": "Odoo webhook received"}

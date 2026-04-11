@@ -1426,8 +1426,8 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
         order_status = {
             "completed": "sale",
             "on-hold": "draft",
-            "processing": "sent",
-            "pending": "draft",
+            "processing": "sale",
+            "pending": "sent",
             "cancelled": "cancel",
             "checkout-draft": "draft"
         }
@@ -1465,7 +1465,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             if order_state == 'draft':
                 try:
 
-                    if order_data["status"] == "completed":
+                    if order_data["status"] == "processing":
                         order_client.cal_method(
                             model='sale.order',
                             metod='action_confirm',
@@ -1498,19 +1498,19 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                     f"Attempting to update note and order lines only."
                 )
                 try:
-                    if order_data["status"] == "completed" and order_state != 'sale':
-                        order_client.cal_method(
-                            model='sale.order',
-                            metod='action_confirm',
-                            params=[order_id]
-                        )
-                        order_client.write(
-                            model='sale.order',
-                            vals=sale_order_data,
-                            record_id=order_id
-                            )
+                    # if order_data["status"] == "processing" and order_state != 'sale':
+                    #     order_client.cal_method(
+                    #         model='sale.order',
+                    #         metod='action_confirm',
+                    #         params=[order_id]
+                    #     )
+                    #     order_client.write(
+                    #         model='sale.order',
+                    #         vals=sale_order_data,
+                    #         record_id=order_id
+                    #         )
                     # Update note
-                    elif order_data["status"] in ["pending", "processing", "on-hold"]:
+                    if order_data["status"] in ["pending", "processing", "on-hold"]:
                         logger.info(
                             f"Order {order_id} status is '{order_data['status']}', ensuring it is in draft state for update.")
                         message = f"There are inconsitens in the status order of off woocommerce and odoo."
@@ -1529,7 +1529,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                             record_id=order_id,
                             body=message
                         )
-                    elif order_data["status"] == "cancelled":
+                    if order_data["status"] == "cancelled":
                         logger.info(
                             f"Order {order_id} status is 'cancelled', cancelling order in Odoo.")
                         message = f"This order was cancelled in WooCommerce. Cancelling in Odoo as well."

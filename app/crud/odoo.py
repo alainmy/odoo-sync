@@ -343,7 +343,7 @@ class OdooClient:
             raise HTTPException(status_code=500, detail=str(e))
 
     def get_odoo_info(self):
-        
+
         payload = {
             "jsonrpc": "2.0",
             "method": "call",
@@ -365,9 +365,9 @@ class OdooClient:
         except Exception as e:
             logger.error(f"Error getting Odoo info: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
-    
+
     def get_installed_modules(self):
-        
+
         payload = {
             "jsonrpc": "2.0",
             "method": "call",
@@ -391,10 +391,169 @@ class OdooClient:
             result = response.json()
             logger.info(f"Odoo installed modules response: {result}")
             if result.get("error"):
-                logger.error(f"Odoo installed modules error: {result['error']}")
+                logger.error(
+                    f"Odoo installed modules error: {result['error']}")
                 raise HTTPException(status_code=500,
                                     detail=str(result["error"]))
             return result.get("result", [])
         except Exception as e:
             logger.error(f"Error getting installed modules: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
+
+    def get_model_id_by_name(self, model_name):
+        """Obtiene el ID de un modelo dado su nombre técnico."""
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "call",
+            "params": {
+                "service": "object",
+                "method": "execute_kw",
+                "args": [
+                    self.db,
+                    self.uid,
+                    self.password,
+                    'ir.model',
+                    'search_read',
+                    [[['model', '=', model_name]]],
+                    {
+                        'fields': ['id', 'model', 'name', 'field_id'],
+                        'limit': 1,
+                    }
+                ],
+            },
+            "id": 6
+        }
+        try:
+            response = requests.post(f"{self.url}/jsonrpc", json=payload)
+            result = response.json()
+            logger.info(f"Odoo get_model_id_by_name response: {result}")
+            if result.get("error"):
+                logger.error(
+                    f"Odoo get_model_id_by_name error: {result['error']}")
+                raise HTTPException(status_code=500,
+                                    detail=str(result["error"]))
+            records = result.get("result", [])
+            if records:
+                return records
+            else:
+                raise HTTPException(
+                    status_code=404, detail=f"Model '{model_name}' not found in Odoo.")
+        except Exception as e:
+            logger.error(f"Error in get_model_id_by_name: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    def get_webhook_by_url(self, url):
+        """Crea un webhook en Odoo usando el modelo ir.action.server para almacenar la configuración."""
+        # Aquí podrías implementar la lógica para crear un registro en un modelo personalizado de Odoo
+        # que almacene la configuración del webhook, y luego usar esa información para configurar el webhook en WooCommerce.
+
+        webhook = self.search_read_sync(
+            model='ir.action.server',
+            domain=[['webhook_url', '=', url]],
+            fields=['id', 'name'],
+        )
+        if not webhook:
+            try:
+                model_id = self.get_model_id_by_name('sale.order')
+                fields = self.search_read_sync(
+                    model='ir.model.fields',
+                    domain=[
+                        ['model_id', '=', model_id[0]['id']],
+                        ['name', 'in', ['id', 'name', 'state', 'invoice_status',
+                                        'delivery_status', 'client_order_ref']]
+                    ],  # Usar el ID del modelo 'sale.order'
+                    fields=['id', 'name']
+                )
+                fields_ids = [f['id'] for f in fields]
+                if not model_id:
+                    raise HTTPException(
+                        status_code=404, detail="Model 'sale.order' not found in Odoo.")
+                logger.info(f"Fields for 'sale.order': {fields}")
+                payload = {
+                    "jsonrpc": "2.0",
+                    "method": "call",
+                    "params": {
+                        "service": "object",
+                        "method": "execute_kw",
+                        "args": [
+                            self.db,
+                            self.uid,
+                            self.password,
+                            'ir.actions.server',
+                            'create',
+                            [{
+                                'name': f'Webhook for {url}',
+                                'model_id': model_id[0]['id'],
+                                'state': 'webhook',
+                                'webhook_url': url,
+                                # Aquí podrías especificar los campos que quieres enviar en el webhook
+                                'webhook_field_ids': fields_ids,
+                            }],
+                            {"context": self.context}
+                        ],
+                    },
+                    "id": 7
+                }
+                response = requests.post(f"{self.url}/jsonrpc", json=payload)
+                result = response.json()
+                logger.info(f"Odoo get_webhook_by_url response: {result}")
+                if result.get("error"):
+                    logger.error(
+                        f"Odoo get_webhook_by_url error: {result['error']}")
+                    raise HTTPException(status_code=500,
+                                        detail=str(result["error"]))
+                result = result.get("result", [])
+                if result:
+                    self.create_plannification_action(result)
+            except Exception as e:
+                logger.error(f"Error in get_webhook_by_url: {str(e)}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+    def create_plannification_action(self, action_server_id):
+        model_id = self.get_model_id_by_name('ir.actions.server')
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "call",
+            "params": {
+                "service": "object",
+                "method": "execute_kw",
+                "args": [
+                    self.db,
+                    self.uid,
+                    self.password,
+                    'ir.cron',
+                    'create',
+                    [{
+                        'name': f'Update order after delivery and invoicing - Action Server {action_server_id}',
+                        'model_id': model_id[0]['id'],
+                        'state': 'code',
+                        'code': f"""records = env['sale.order'].search([
+    ('state', '=', 'sale'),
+    ('client_order_ref', '!=', False),
+    ('delivery_status', '=', 'full'),
+    ('invoice_status', '=', 'invoiced')
+])
+action = env['ir.actions.server'].browse(931)
+if action:
+    action.with_context(
+        active_model='sale.order',
+        active_ids=records.ids
+    ).sudo().run()""",
+                        'interval_number': 1,
+                        'interval_type': 'hours',
+                        'active': True,
+                    }],
+                    {"context": self.context}
+                ],
+            },
+            "id": 8
+        }
+        response = requests.post(f"{self.url}/jsonrpc", json=payload)
+        result = response.json()
+        logger.info(f"Odoo create_plannification_action response: {result}")
+        if result.get("error"):
+            logger.error(
+                f"Odoo create_plannification_action error: {result['error']}")
+            raise HTTPException(status_code=500,
+                                detail=str(result["error"]))
+        return result.get("result", [])
