@@ -84,6 +84,15 @@ def create_instance(
             detail="No se pudo conectar a Odoo con las credenciales proporcionadas"
         )
     odoo_info = odoo_client.get_odoo_info()
+    version_info = odoo_info.get("server_version", "Unknown")
+    # Get instaled modules
+    installed_modules = odoo_client.get_installed_modules()
+    modules = [module.get("name") for module in installed_modules if module["name"] in [
+        "sale_management", "stock", "account", "product", "website_sale"]]
+    installed_modules_names = os.linesep.join(
+        [module for module in modules])
+    odoo_description = f"Odoo Version {version_info}\n with modules:\n \n{installed_modules_names}"
+    instance.odoo_description = odoo_description
     """Crear una nueva instancia"""
     return crud_instance.create_instance(db, instance=instance, user_id=current_user.id)
 
