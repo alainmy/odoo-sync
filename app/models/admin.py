@@ -258,7 +258,7 @@ class WooCommerceInstance(Base):
     odoo_db = Column(String(255))
     odoo_username = Column(String(255))
     odoo_password = Column(String(255))
-
+    odoo_description = Column(String(500), index=True, nullable=True)
     # Sync settings
     auto_sync_products = Column(Boolean, default=False)
     auto_sync_orders = Column(Boolean, default=False)

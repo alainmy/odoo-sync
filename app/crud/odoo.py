@@ -341,3 +341,60 @@ class OdooClient:
         except Exception as e:
             logger.error(f"Error in search_count: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
+
+    def get_odoo_info(self):
+        
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "call",
+            "params": {
+                "service": "common",
+                "method": "version",
+                "args": []
+            },
+        }
+        try:
+            response = requests.post(f"{self.url}/jsonrpc", json=payload)
+            result = response.json()
+            logger.info(f"Odoo version response: {result}")
+            if result.get("error"):
+                logger.error(f"Odoo version error: {result['error']}")
+                raise HTTPException(status_code=500,
+                                    detail=str(result["error"]))
+            return result.get("result", {})
+        except Exception as e:
+            logger.error(f"Error getting Odoo info: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    def get_installed_modules(self):
+        
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "call",
+            "params": {
+                "service": "object",
+                "method": "execute_kw",
+                "args": [
+                    self.db,
+                    self.uid,
+                    self.password,
+                    'ir.module.module',
+                    'search_read',
+                    [[['state', '=', 'installed']]],
+                    {'fields': ['name']}
+                ],
+            },
+            "id": 5
+        }
+        try:
+            response = requests.post(f"{self.url}/jsonrpc", json=payload)
+            result = response.json()
+            logger.info(f"Odoo installed modules response: {result}")
+            if result.get("error"):
+                logger.error(f"Odoo installed modules error: {result['error']}")
+                raise HTTPException(status_code=500,
+                                    detail=str(result["error"]))
+            return result.get("result", [])
+        except Exception as e:
+            logger.error(f"Error getting installed modules: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))

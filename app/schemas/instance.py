@@ -26,6 +26,7 @@ class WooCommerceInstanceBase(BaseModel):
     price_list_id: Optional[int] = None
     auto_sync_products: Optional[bool] = False
     auto_sync_orders: Optional[bool] = False
+    odoo_description: Optional[str] = None
 
 
 class WooCommerceInstanceCreate(WooCommerceInstanceBase):
@@ -47,6 +48,7 @@ class WooCommerceInstanceUpdate(BaseModel):
     price_list_id: Optional[int] = None
     auto_sync_products: Optional[bool] = False
     auto_sync_orders: Optional[bool] = False
+    odoo_description: Optional[str] = None
 
 
 class WooCommerceInstance(WooCommerceInstanceBase):
