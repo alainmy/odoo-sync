@@ -16,6 +16,7 @@ celery_app = Celery(
         "app.tasks.scheduled_tasks",
         "app.tasks.attribute_tasks",
         "app.tasks.pricelist_tasks",
+        "app.tasks.instance_tasks",
     ]
 )
 
