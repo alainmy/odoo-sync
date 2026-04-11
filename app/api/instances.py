@@ -133,7 +133,7 @@ def update_instance(
         "sale_management", "stock", "account", "product", "website_sale"]]
     installed_modules_names = os.linesep.join(
         [module for module in modules])
-    odoo_description = f"Odoo Version {version_info}\n with modules:\n \n{}"
+    odoo_description = f"Odoo Version {version_info}\n with modules:\n \n{installed_modules_names}"
     instance_update.odoo_description = odoo_description
     """Actualizar una instancia"""
 
