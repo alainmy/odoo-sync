@@ -93,8 +93,16 @@ def create_instance(
         [module for module in modules])
     odoo_description = f"Odoo Version {version_info}\n with modules:\n \n{installed_modules_names}"
     instance.odoo_description = odoo_description
+    instance_created = crud_instance.create_instance(
+        db, instance=instance, user_id=current_user.id)
+    # Get or create webhook for update order in WooCommerce
+    if 'sale_management' in modules:
+        odoo_webhook_url_template = "{host}/api/v1/webhook-receiver/odoo/{instance_id}/order_update"
+        webhook = odoo_client.get_webhook_by_url(
+            url=odoo_webhook_url_template.format(host=settings.fast_api_host,
+                                                 instance_id=instance_created.id))
     """Crear una nueva instancia"""
-    return crud_instance.create_instance(db, instance=instance, user_id=current_user.id)
+    return instance_created
 
 
 @router.put("/{instance_id}", response_model=WooCommerceInstance)
@@ -129,11 +137,11 @@ def update_instance(
     instance_update.odoo_description = odoo_description
     """Actualizar una instancia"""
 
-    # Get or create webhook for update order in WooCommerce
-    odoo_webhook_url_template = "{host}/api/v1/webhook-receiver/odoo/{instance_id}/order_update"
-    webhook = odoo_client.get_webhook_by_url(
-        url=odoo_webhook_url_template.format(host=settings.fast_api_host,
-                                             instance_id=instance_id))
+    if 'sale_management' in modules:
+        odoo_webhook_url_template = "{host}/api/v1/webhook-receiver/odoo/{instance_id}/order_update"
+        webhook = odoo_client.get_webhook_by_url(
+            url=odoo_webhook_url_template.format(host=settings.fast_api_host,
+                                                 instance_id=instance_id))
     instance = crud_instance.update_instance(
         db,
         instance_id=instance_id,
