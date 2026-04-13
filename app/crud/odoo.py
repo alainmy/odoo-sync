@@ -533,7 +533,7 @@ class OdooClient:
     ('delivery_status', '=', 'full'),
     ('invoice_status', '=', 'invoiced')
 ])
-action = env['ir.actions.server'].browse(931)
+action = env['ir.actions.server'].browse({action_server_id})
 if action:
     action.with_context(
         active_model='sale.order',
@@ -557,3 +557,36 @@ if action:
             raise HTTPException(status_code=500,
                                 detail=str(result["error"]))
         return result.get("result", [])
+
+    def delete_webhook(self, webhook_id):
+        """Elimina un webhook en Odoo dado su ID."""
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "call",
+            "params": {
+                "service": "object",
+                "method": "execute_kw",
+                "args": [
+                    self.db,
+                    self.uid,
+                    self.password,
+                    'ir.actions.server',
+                    'unlink',
+                    [[webhook_id]],
+                    {"context": self.context}
+                ],
+            },
+            "id": 9
+        }
+        try:
+            response = requests.post(f"{self.url}/jsonrpc", json=payload)
+            result = response.json()
+            logger.info(f"Odoo delete_webhook response: {result}")
+            if result.get("error"):
+                logger.error(f"Odoo delete_webhook error: {result['error']}")
+                raise HTTPException(status_code=500,
+                                    detail=str(result["error"]))
+            return result.get("result", False)
+        except Exception as e:
+            logger.error(f"Error in delete_webhook: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))

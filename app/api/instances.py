@@ -1,4 +1,6 @@
+import logging
 import os
+from venv import logger
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
@@ -18,6 +20,7 @@ router = APIRouter(
     tags=["instances"]
 )
 
+logger = logging.getLogger(__name__)
 
 @router.get("", response_model=List[WooCommerceInstance])
 def list_instances(
@@ -174,6 +177,24 @@ def delete_instance(
     db: Session = Depends(get_db),
     current_user: Admin = Depends(get_current_user)
 ):
+    # Eliminar webhook asociado a la instancia
+    instance = crud_instance.get_instance_by_id(db, instance_id=instance_id)
+    if instance and instance.odoo_description:
+        odoo_client = OdooClient(
+            url=instance.odoo_url,
+            db=instance.odoo_db,
+            username=instance.odoo_username,
+            password=instance.odoo_password
+        )
+        uid = odoo_client.odoo_authenticate()
+        if uid:
+            odoo_webhook_url_template = "{host}/api/v1/webhook-receiver/odoo/{instance_id}/order_update"
+            webhook = odoo_client.get_webhook_by_url(
+                url=odoo_webhook_url_template.format(host=settings.fast_api_host,
+                                                    instance_id=instance_id))
+            if webhook:
+                odoo_client.delete_webhook(webhook_id=webhook['id'])
+                logger.info(f"Deleted Odoo webhook with ID {webhook['id']} for instance {instance_id}")
     """Eliminar una instancia"""
     deleted = crud_instance.delete_instance(
         db, instance_id=instance_id, user_id=current_user.id)
