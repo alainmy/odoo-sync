@@ -3,7 +3,7 @@ from pydantic import BaseModel, HttpUrl
 from typing import Optional
 from datetime import datetime
 
-from app.schemas import language
+from app.schemas.websites import Website
 
 
 class DescritionType(str, Enum):
@@ -27,8 +27,9 @@ class WooCommerceInstanceBase(BaseModel):
     auto_sync_products: Optional[bool] = False
     auto_sync_orders: Optional[bool] = False
     odoo_description: Optional[str] = None
-
-
+    category_from_product: Optional[bool] = None
+    website_id: Optional[int] = None
+    website: Optional[Website] = None
 class WooCommerceInstanceCreate(WooCommerceInstanceBase):
     pass
 
@@ -49,8 +50,9 @@ class WooCommerceInstanceUpdate(BaseModel):
     auto_sync_products: Optional[bool] = False
     auto_sync_orders: Optional[bool] = False
     odoo_description: Optional[str] = None
-
-
+    category_from_product: Optional[bool] = None
+    website_id: Optional[int] = None
+    
 class WooCommerceInstance(WooCommerceInstanceBase):
     id: int
     user_id: int

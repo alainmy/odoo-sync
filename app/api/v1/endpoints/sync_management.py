@@ -17,7 +17,7 @@ from app.repositories import ProductSyncRepository
 from app.core.config import settings
 from app.auth.oauth2 import get_current_user
 from app.models.admin import Admin, ProductSync
-from app.utils.instance_helpers import get_active_instance_id
+from app.utils.instance_helpers import get_active_instance, get_active_instance_id
 from app.schemas.sync_schemas import (
     OdooProductListResponse,
     ProductSyncStatusResponse,
@@ -68,6 +68,7 @@ async def list_odoo_products_with_sync_status(
     4. Applies filters and returns paginated results
     """
     try:
+        active_instance = get_active_instance(db, current_user)
         # Authenticate with Odoo
         uid = await odoo.odoo_authenticate()
         if not uid:
@@ -84,6 +85,7 @@ async def list_odoo_products_with_sync_status(
         if tag_ids:
             domain.append(["product_tag_ids", "in", tag_ids])
         domain.append(["sale_ok", "=", True])
+        domain.append(["website_id", "=", active_instance.website_id])
         # Fetch from Odoo (over-fetch to account for status filtering)
         # If filtering by status, we need more products since some will be filtered out
         # fetch_limit = offset
@@ -217,7 +219,8 @@ async def batch_sync_products(
                 "product_variant_id",
                 "product_template_image_ids",
                 "is_published",
-                "weight"
+                "weight",
+                'public_categ_ids'
             ],
             limit=len(odoo_ids)
         )

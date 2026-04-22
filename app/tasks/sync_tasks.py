@@ -26,7 +26,7 @@ from app.tasks.task_monitoring import update_task_progress
 from app.tasks.sync_helpers import create_wc_api_client
 from app.services.woocommerce import get_wc_api_from_instance_config, \
     build_category_chain, category_for_export
-from app.models.admin import CategorySync, ProductSync, ProductVariantSync
+from app.models.admin import CategorySync, ProductSync, ProductVariantSync, WooCommerceInstance
 from app.utils.image_helper import ImageHelper
 from app.models.user_model import ClientSync
 from app.repositories.client_sync_repository import ClientSyncRepository
@@ -603,6 +603,8 @@ def sync_product_to_woocommerce(
             odoo_config["username"],
             odoo_config["password"]
         )
+        instance = self.db.query(WooCommerceInstance).filter(
+            WooCommerceInstance.id == instance_id).first()
         # Normalize Odoo data (False -> None, many2one lists -> int)
         normalized_data = {}
         # logger.info(f"Normalizing Odoo product data: {odoo_product_data}")
@@ -622,13 +624,13 @@ def sync_product_to_woocommerce(
             normalized_data["image_urls"] = image_urls
         logger.info(f"IMAGES URLS: {normalized_data['image_urls']}")
         for key, value in odoo_product_data.items():
-            
+
             if key == 'is_published':
                 normalized_data[key] = value
             elif value is False and key:
                 normalized_data[key] = None
             elif isinstance(value, list):
-                if key == 'categ_id' and len(value) == 2:
+                if key == 'categ_id' and len(value) == 2 and instance.category_from_product:
                     # many2one field [id, name] -> extract both id and name
                     normalized_data['categ_id'] = value[0] if isinstance(
                         value[0], int) else None
@@ -687,6 +689,14 @@ def sync_product_to_woocommerce(
                 elif key == 'attribute_line_ids':
                     # many2many field for attributes - keep as is for now
                     normalized_data[key] = value
+                elif key == 'public_categ_ids' and not instance.category_from_product:
+
+                    categ_sync = self.db.query(CategorySync).filter(
+                        CategorySync.odoo_id in value
+                    ).all()
+                    values_dic = [{'id': item.woocommerce_id}
+                                  for item in categ_sync]
+                    normalized_data[key] = values_dic
                 elif len(value) == 2 and isinstance(value[0], int):
                     # Other many2one fields [id, name] -> extract id only
                     normalized_data[key] = value[0]
@@ -1538,7 +1548,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                             record_id=order_id,
                             body=message
                         )
-                        
+
                     # Update order lines - this is more complex and may require custom logic
                     # For simplicity, we will not update order lines for non-draft orders in this example
                     logger.info(
@@ -1764,7 +1774,214 @@ def sync_category_hierarchy_to_woocommerce(
             wc_parent_id=wc_parent_id,  # Ya calculado arriba
             db=self.db,
             wcapi=wcapi,
-            instance_id=instance_id
+            instance_id=instance_id,
+            odoo_config=odoo_config
+        )
+
+        if result and len(result) > 0:
+            wc_category_id = result[0].get("id")
+            logger.info(
+                f"Category synced successfully: Odoo {odoo_category_id} -> WC {wc_category_id}")
+            return {
+                "success": True,
+                "action": "synced",
+                "odoo_id": odoo_category_id,
+                "woocommerce_id": wc_category_id,
+                "message": f"Category {category_path} synced successfully"
+            }
+        else:
+            logger.warning(
+                f"Category sync returned no result: {category_path}")
+            return {
+                "success": False,
+                "action": "failed",
+                "odoo_id": odoo_category_id,
+                "woocommerce_id": None,
+                "message": f"Failed to sync category {category_path}"
+            }
+
+    except Exception as exc:
+        logger.error(f"Error syncing category to WooCommerce: {exc}")
+        raise self.retry(exc=exc, countdown=2 ** self.request.retries)
+
+
+# ECOMMERCE CATEGORIES
+@celery_app.task(
+    bind=True,
+    base=DatabaseTask,
+    name="app.tasks.sync_tasks.sync_eco_category_to_woocommerce",
+    max_retries=3,
+    default_retry_delay=60
+)
+@log_celery_task_with_retry
+def sync_eco_category_to_woocommerce(
+    self,
+    odoo_category_data: Dict[str, Any],
+    categories: list,
+    instance_id: int,
+    odoo_config: Dict[str, str] = None,
+    wc_config: Dict[str, str] = None
+) -> Dict[str, Any]:
+    """
+    Sync a single category from Odoo to WooCommerce.
+
+    Args:
+        odoo_category_data: Odoo category data dictionary (id, name, complete_name, parent_id)
+        instance_id: WooCommerce instance ID
+        odoo_config: Odoo configuration dict (url, db, username, password)
+        wc_config: WooCommerce configuration dict (url, consumer_key, consumer_secret)
+
+    Returns:
+        Dict with sync result
+    """
+    try:
+
+        logger.info(
+            f"Syncing Odoo category {odoo_category_data.get('id')} to WooCommerce (instance {instance_id})")
+        categories_by_id = {
+            cat["id"]: {
+                "id": cat["id"],
+                "name": cat["name"],
+                "parent_id": cat["parent_id"][0] if cat["parent_id"] else None,
+                "image_1920": cat["image_1920"],
+                "website_description": cat["website_description"],
+            }
+            for cat in categories
+        }
+        logger.info(f"Categories by ID: {categories_by_id}")
+        categories_to_sync = build_category_chain(
+            odoo_category_data["id"], categories_by_id)
+        # Crear wcapi desde wc_config si se proporcionó
+        logger.info(
+            f"Categories to sync (in order): {[cat['name'] for cat in categories_to_sync]}")
+        wcapi = None
+        if wc_config:
+            wcapi = get_wc_api_from_instance_config(wc_config)
+
+        # Obtener ruta completa de categoría (complete_name incluye jerarquía)
+        category_path = odoo_category_data.get(
+            "complete_name") or odoo_category_data.get("name")
+
+        # Exportar categoría a WooCommerce usando chain para ejecución secuencial
+        logger.info(
+            f"Creating task chain for {len(categories_to_sync)} categories: {[cat['name'] for cat in categories_to_sync]}")
+
+        # Construir cadena usando el operador | (pipe) con .s() en lugar de .si()
+        # Nota: Usamos .si() porque NO queremos pasar resultados entre tareas
+        # cada categoría se sincroniza con sus propios parámetros
+        signatures = []
+        for i, cat in enumerate(categories_to_sync):
+            sig = sync_eco_category_hierarchy_to_woocommerce.si(
+                cat, instance_id,
+                odoo_config=odoo_config,
+                wc_config=wc_config
+            ).set(queue='sync_queue')
+            signatures.append(sig)
+            logger.info(
+                f"Created signature for: {cat['name']} (position {i+1}/{len(categories_to_sync)})")
+
+        # Usar chain() de celery.canvas para crear la cadena
+        from celery import chain
+        task_chain = chain(*signatures)
+
+        # Ejecutar la cadena
+        chain_result = task_chain.apply_async()
+
+        logger.info(f"Chain started with final task ID: {chain_result.id}")
+
+        if chain_result:
+            return {
+                "success": True,
+                "action": "synced",
+                "chain_id": str(chain_result.id),
+                "category_count": len(categories_to_sync),
+                "message": f"Category chain started for {category_path} ({len(categories_to_sync)} categories)"
+            }
+        else:
+            logger.warning(
+                f"Category sync returned no result: {category_path}")
+            return {
+                "success": False,
+                "action": "failed",
+                "children_tasks": [],
+                "woocommerce_id": None,
+                "message": f"Failed to sync category {category_path}"
+            }
+
+    except Exception as exc:
+        logger.error(f"Error syncing category to WooCommerce: {exc}")
+        raise self.retry(exc=exc, countdown=2 ** self.request.retries)
+
+
+@celery_app.task(
+    bind=True,
+    base=DatabaseTask,
+    name="app.tasks.sync_tasks.sync_eco_ category_hierarchy_to_woocommerce",
+    max_retries=3,
+    default_retry_delay=60
+)
+@log_celery_task_with_retry
+def sync_eco_category_hierarchy_to_woocommerce(
+    self,
+    odoo_category_data: Dict[str, Any],
+    instance_id: int,
+    odoo_config: Dict[str, str] = None,
+    wc_config: Dict[str, str] = None
+) -> Dict[str, Any]:
+    """
+    Sync a single category from Odoo to WooCommerce.
+
+    Args:
+        odoo_category_data: Odoo category data dictionary (id, name, complete_name, parent_id)
+        instance_id: WooCommerce instance ID
+        odoo_config: Odoo configuration dict (url, db, username, password)
+        wc_config: WooCommerce configuration dict (url, consumer_key, consumer_secret)
+
+    Returns:
+        Dict with sync result
+    """
+    try:
+
+        logger.info(
+            f"Syncing Odoo category {odoo_category_data.get('id')} to WooCommerce (instance {instance_id})")
+
+        # Determinar wc_parent_id si la categoría tiene padre
+        wc_parent_id = None
+        if odoo_category_data.get("parent_id"):
+            parent_sync = self.db.query(CategorySync).filter(
+                CategorySync.odoo_id == odoo_category_data["parent_id"],
+                CategorySync.instance_id == instance_id
+            ).first()
+
+            if parent_sync:
+                wc_parent_id = parent_sync.woocommerce_id
+                logger.info(
+                    f"Parent category found: Odoo {odoo_category_data['parent_id']} -> WC {wc_parent_id}")
+            else:
+                # En una cadena, esto no debería ocurrir porque las tareas son secuenciales
+                logger.error(
+                    f"Parent category {odoo_category_data['parent_id']} not found in sync table. "
+                    f"This should not happen in a chain execution."
+                )
+
+        # Crear wcapi desde wc_config si se proporcionó
+        wcapi = None
+        if wc_config:
+            wcapi = get_wc_api_from_instance_config(wc_config)
+
+        # Obtener ruta completa de categoría (complete_name incluye jerarquía)
+        category_path = odoo_category_data.get(
+            "complete_name") or odoo_category_data.get("name")
+        odoo_category_id = odoo_category_data.get("id")
+
+        # Exportar categoría a WooCommerce
+        result = category_for_export(
+            category_data=odoo_category_data,
+            wc_parent_id=wc_parent_id,  # Ya calculado arriba
+            db=self.db,
+            wcapi=wcapi,
+            instance_id=instance_id,
+            odoo_config=odoo_config
         )
 
         if result and len(result) > 0:

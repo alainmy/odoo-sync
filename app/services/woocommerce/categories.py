@@ -10,10 +10,12 @@ import redis
 from redis.lock import Lock as RedisLock
 
 from app.models.product_models import OdooCategory, CategorySyncResult, WooCommerceCategoryCreate
-from app.models.admin import CategorySync
+from app.models.admin import CategorySync, WooCommerceInstance
 from app.services.woocommerce.client import wc_request
 from app.repositories.category_sync_repository import CategorySyncRepository
 from app.core.config import settings
+from app.utils import image_helper
+from app.crud.odoo import OdooClient
 
 __logger__ = logging.getLogger(__name__)
 
@@ -44,7 +46,8 @@ def category_for_export(
     wc_parent_id: Optional[int] = None,
     db: Session = None,
     wcapi: API = None,
-    instance_id: Optional[int] = None
+    instance_id: Optional[int] = None,
+    odoo_config: Optional[Dict[str, str]] = None
 ) -> Optional[List[Dict[str, int]]]:
     """
     Manage creation and export of hierarchical categories to WooCommerce.
@@ -64,7 +67,12 @@ def category_for_export(
     lock_key = f"category_sync:{category_data.get('id')}:{instance_id}"
     lock_timeout = 300  # 5 minutes max lock time
     lock = None
-
+    odoo_client = OdooClient(**odoo_config)
+    __logger__.info(f"Authenticating with Odoo: {odoo_client.url}")
+    auth = odoo_client.web_authentication(odoo_client.url)
+    cookies = auth.cookies.get_dict()
+    cookies = auth.cookies.get_dict()
+    image_helpers = image_helper.ImageHelper(session_id=cookies["session_id"])
     try:
         # Acquire distributed lock if Redis is available
         if redis_client:
@@ -78,7 +86,9 @@ def category_for_export(
                 return None
             __logger__.info(
                 f"Acquired lock for category {category_data.get('id')}")
-
+        instance = db.query(WooCommerceInstance).filter(
+            WooCommerceInstance.id == instance_id
+        ).first()
         repo = CategorySyncRepository(db)
         existing_sync = db.query(CategorySync).filter(
             CategorySync.odoo_id == category_data.get("id"),
@@ -141,12 +151,22 @@ def category_for_export(
                     f"Odoo category {existing_mapping.odoo_id}. Cannot map to {category_data.get('id')}."
                 )
                 return None
-
+        image = None
+        if 'image_1920' in category_data and category_data['image_1920']:
+            product_image, file_path = image_helpers.download_and_save_image(
+                f"{odoo_config['url']}/web/image/product.public.category/{category_data['id']}/image_1920")
+            image = product_image
         if woocommerce_id:
             __logger__.info(
                 f"Category {category_data['name']} exists in WooCommerce (ID: {woocommerce_id})")
             # Update existing category
-            update_data = {"name": category_data["name"], "slug": slug}
+            update_data = {"name": category_data["name"],
+                           "slug": slug,
+                           "image": {
+                               "src": image
+            },
+                "description": category_data.get("description", "")
+            }
             if parent:
                 # parent is already the woocommerce_id (int)
                 update_data["parent"] = parent
@@ -178,7 +198,11 @@ def category_for_export(
                 f"Category {category_data['name']} not found in WooCommerce, creating new")
             category_data_wc = {
                 "name": category_data["name"],
-                "slug": slug
+                "slug": slug,
+                "image": {
+                    "src": image
+                },
+                "description": category_data.get("description", "")
             }
             if parent:
                 # parent is already the woocommerce_id (int)
@@ -205,7 +229,7 @@ def category_for_export(
                 return None
 
             woocommerce_id = wc_product_id
-
+        image_helpers.remove_local_image([file_path])
         # RE-CHECK existing_sync JUST BEFORE creating/updating to prevent race condition
         # Another worker may have created a record between initial check and now
         existing_sync = db.query(CategorySync).filter(
@@ -220,7 +244,8 @@ def category_for_export(
                 woocommerce_id=woocommerce_id,
                 created=True,
                 last_synced_at=datetime.utcnow(),
-                message=f"Category updated: {category_data['name']}"
+                message=f"Category updated: {category_data['name']}",
+                category_from_product=instance.category_from_product
             )
             __logger__.info(
                 f"Updated existing sync record for category {category_data.get('id')} -> WC {woocommerce_id}"
@@ -235,7 +260,8 @@ def category_for_export(
                     instance_id=instance_id,
                     created=True,
                     last_synced_at=datetime.utcnow(),
-                    message=f"Category created: {category_data['name']}"
+                    message=f"Category created: {category_data['name']}",
+                    category_from_product=instance.category_from_product
                 )
                 __logger__.info(
                     f"Created new sync record for category {category_data.get('id')} -> WC {woocommerce_id}"

@@ -19,6 +19,7 @@ from app.api.v1.endpoints.task_monitoring import router as task_monitoring_route
 from app.api.v1.endpoints.pricelists import router as pricelists_router
 from app.api.v1.endpoints.webhooks import router as webhooks_router
 from app.api.v1.endpoints.webhook_receiver import router as webhook_receiver_router
+from app.api.v1.endpoints.wensites import router as odoo_websites_router
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.session import get_session, create_session, lifespan
@@ -113,6 +114,7 @@ app.include_router(pricelists_router, prefix="/api/v1/pricelists", tags=["pricel
 app.include_router(webhooks_router, prefix="/api/v1/webhooks", tags=["webhooks"])
 app.include_router(webhook_receiver_router, prefix="/api/v1/webhook-receiver", tags=["webhook-receiver"])
 app.include_router(delivery_methods, prefix="/api/v1/delivery_methods", tags=["DELIVERY"])
+app.include_router(odoo_websites_router, prefix="/api/v1/odoo-websites", tags=["odoo-websites"])
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=5010, reload=True)

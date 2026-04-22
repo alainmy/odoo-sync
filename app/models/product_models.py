@@ -56,6 +56,8 @@ class OdooProduct(BaseModel):
     product_variant_id: Optional[int] = None  # Para productos variables, el ID de la variante específica
     is_published: bool = Field(default=False, description="Indica si el producto está publicado en WooCommerce")
 
+    public_categ_ids: Optional[List[Dict[str, Any]]] = Field(default_factory=list, description="Publics categroies")
+    
     @field_validator('active', 'sale_ok', 'purchase_ok', mode='before')
     @classmethod
     def convert_none_to_true(cls, v):

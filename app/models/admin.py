@@ -19,7 +19,8 @@ class CategorySync(Base):
     odoo_id = Column(Integer, index=True)
     odoo_name = Column(String(255), index=True, nullable=True)
     woocommerce_id = Column(Integer, index=True)
-
+    # Flag to indicate if category is from product's public categories
+    category_from_product = Column(Boolean, default=True)
     # Relación con instancia
     instance_id = Column(Integer, ForeignKey(
         "woocommerce_instances.id", ondelete="CASCADE"),
@@ -282,3 +283,7 @@ class WooCommerceInstance(Base):
 
     price_list = relationship("PricelistSync",
                               back_populates="instances")
+
+    category_from_product = Column(Boolean, default=True)
+
+    website_id = Column(Integer)

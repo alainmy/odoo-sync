@@ -118,7 +118,7 @@ async def get_odoo_from_active_instance(
     context.update({
         "lang": request.headers.get("lang", instance.odoo_language or "en_US"),
         "tz": request.headers.get("tz", "America/Havana"),
-        "website_id": request.headers.get("website_id", 1),
+        "website_id": instance.website_id or 1,
     })
 
     if session:

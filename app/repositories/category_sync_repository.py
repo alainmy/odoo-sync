@@ -3,10 +3,16 @@ Category sync repository.
 
 Handles all category synchronization database operations.
 """
+import logging
 from datetime import datetime
+from turtle import mode
+from venv import logger
 from sqlalchemy.orm import Session
 from app.models.admin import CategorySync
 from app.repositories.base_sync_repository import BaseSyncRepository
+
+
+logger = logging.getLogger(__name__)
 
 
 class CategorySyncRepository(BaseSyncRepository[CategorySync]):
@@ -27,7 +33,9 @@ class CategorySyncRepository(BaseSyncRepository[CategorySync]):
                            instance_id: int,
                            created: bool = False,
                            last_synced_at: datetime = None,
-                           message: str = None) -> CategorySync:
+                           message: str = None,
+                           category_from_product: bool = False
+                           ) -> CategorySync:
         """
         Create a new category sync record.
 
@@ -49,7 +57,8 @@ class CategorySyncRepository(BaseSyncRepository[CategorySync]):
             instance_id=instance_id,
             created=created,
             last_synced_at=last_synced_at,
-            message=message
+            message=message,
+            category_from_product=category_from_product
         )
         self.db.add(sync_record)
         self.db.commit()
@@ -88,3 +97,24 @@ class CategorySyncRepository(BaseSyncRepository[CategorySync]):
         self.db.commit()
         self.db.refresh(sync_record)
         return sync_record
+
+    def delete_all_by_instance(self, instance_id: int, category_from_product=None):
+        """
+        Delete all category sync records for a given instance.
+
+        Args:
+            instance_id: WooCommerce instance ID
+        """
+        categ = self.db.query(self.model_class).filter(
+            self.model_class.instance_id == instance_id
+        ).all()
+        if category_from_product is not None:
+            categ = [c for c in categ if c.category_from_product ==
+                     category_from_product]
+        for category in categ:
+            self.db.delete(category)
+
+        self.db.commit()
+
+        logger.info(
+            f"Deleted {len(categ)} category sync records for instance_id={instance_id} with category_from_product={category_from_product}")

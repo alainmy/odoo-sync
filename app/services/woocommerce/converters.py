@@ -11,7 +11,7 @@ from app.constants.odoo import OdooProductType
 from app.services.woocommerce.categories import manage_category_for_export
 from app.services.woocommerce.tags import manage_tags_for_export
 from app.crud.odoo import OdooClient
-from app.models.admin import WooCommerceInstance
+from app.models.admin import CategorySync, WooCommerceInstance
 from app.services.pricelist_service import PricelistService
 
 __logger__ = logging.getLogger(__name__)
@@ -134,7 +134,7 @@ def odoo_product_to_woocommerce(
             odoo_product.list_price) if odoo_product.list_price else None
     # Configure categories with automatic creation if not exists
     categories = None
-    if odoo_product.categ_name:
+    if odoo_product.categ_name and instance.category_from_product:
         __logger__.info(
             f"Product {odoo_product.name} has category: {odoo_product.categ_name}"
         )
@@ -165,7 +165,13 @@ def odoo_product_to_woocommerce(
         )
     else:
         __logger__.info(f"Product {odoo_product.name} has NO tags")
-
+    
+    if odoo_product.public_categ_ids and not instance.category_from_product:  
+        categ_sync = db.query(CategorySync).filter(
+                        CategorySync.odoo_id in odoo_product.public_categ_ids
+            ).all()
+        values_dic = [{'id': item.woocommerce_id} for item in categ_sync]
+        categories = values_dic
     # Configure images
     images = None
     if odoo_product.image_urls:

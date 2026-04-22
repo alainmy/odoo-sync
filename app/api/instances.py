@@ -15,12 +15,14 @@ from app.auth.oauth2 import get_current_user
 from app.models.admin import Admin
 from app.crud.odoo import OdooClient
 from app.core.config import settings
+from app.repositories.category_sync_repository import CategorySyncRepository
 router = APIRouter(
     prefix="/instances",
     tags=["instances"]
 )
 
 logger = logging.getLogger(__name__)
+
 
 @router.get("", response_model=List[WooCommerceInstance])
 def list_instances(
@@ -93,6 +95,19 @@ def create_instance(
         installed_modules = odoo_client.get_installed_modules()
         modules = [module.get("name") for module in installed_modules if module["name"] in [
             "sale_management", "stock", "account", "product", "website_sale"]]
+        if not modules:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="""This modules has to be installed in odoo: 
+                'sale_management',
+                'stock', 'account', 'product',
+                'website_sale' """
+            )
+        if not instance.category_from_product and 'website_sale' not in modules:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="""The  website_sale module must be installed in odoo for sync public categories"""
+            )
         installed_modules_names = os.linesep.join(
             [module for module in modules])
         odoo_description = f"Odoo Version {version_info}\n with modules:\n \n{installed_modules_names}"
@@ -104,7 +119,7 @@ def create_instance(
             odoo_webhook_url_template = "{host}/api/v1/webhook-receiver/odoo/{instance_id}/order_update"
             webhook = odoo_client.get_webhook_by_url(
                 url=odoo_webhook_url_template.format(host=settings.fast_api_host,
-                                                    instance_id=instance_created.id))
+                                                     instance_id=instance_created.id))
         """Crear una nueva instancia"""
         return instance_created
     except Exception as e:
@@ -141,6 +156,27 @@ def update_instance(
         installed_modules = odoo_client.get_installed_modules()
         modules = [module.get("name") for module in installed_modules if module["name"] in [
             "sale_management", "stock", "account", "product", "website_sale"]]
+        if not modules:
+            logger.error(f"Required modules are missing in Odoo instance \
+                         {instance_id}. Required: 'sale_management', 'stock', 'account', 'product', 'website_sale'. Found: {modules}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="""This modules has to be installed in odoo: 
+                'sale_management',
+                'stock', 'account', 'product',
+                'website_sale' """
+            )
+        if not instance_update.category_from_product and 'website_sale' not in modules:
+            logger.error(
+                f"website_sale module is required for syncing public \
+                    categories, but it's not installed in Odoo instance {instance_id}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="""The website_sale module must be installed in odoo for sync public categories"""
+            )
+        categ_repo = CategorySyncRepository(db)
+        categ_repo.delete_all_by_instance(
+            instance_id=instance_id, category_from_product=False if instance_update.category_from_product else True)
         installed_modules_names = os.linesep.join(
             [module for module in modules])
         odoo_description = f"Odoo Version {version_info}\n with modules:\n \n{installed_modules_names}"
@@ -151,7 +187,7 @@ def update_instance(
             odoo_webhook_url_template = "{host}/api/v1/webhook-receiver/odoo/{instance_id}/order_update"
             webhook = odoo_client.get_webhook_by_url(
                 url=odoo_webhook_url_template.format(host=settings.fast_api_host,
-                                                    instance_id=instance_id))
+                                                     instance_id=instance_id))
         instance = crud_instance.update_instance(
             db,
             instance_id=instance_id,
@@ -191,10 +227,11 @@ def delete_instance(
             odoo_webhook_url_template = "{host}/api/v1/webhook-receiver/odoo/{instance_id}/order_update"
             webhook = odoo_client.get_webhook_by_url(
                 url=odoo_webhook_url_template.format(host=settings.fast_api_host,
-                                                    instance_id=instance_id))
+                                                     instance_id=instance_id))
             if webhook:
                 odoo_client.delete_webhook(webhook_id=webhook['id'])
-                logger.info(f"Deleted Odoo webhook with ID {webhook['id']} for instance {instance_id}")
+                logger.info(
+                    f"Deleted Odoo webhook with ID {webhook['id']} for instance {instance_id}")
     """Eliminar una instancia"""
     deleted = crud_instance.delete_instance(
         db, instance_id=instance_id, user_id=current_user.id)
