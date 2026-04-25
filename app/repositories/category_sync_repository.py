@@ -5,7 +5,6 @@ Handles all category synchronization database operations.
 """
 import logging
 from datetime import datetime
-from turtle import mode
 from venv import logger
 from sqlalchemy.orm import Session
 from app.models.admin import CategorySync
