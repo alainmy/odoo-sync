@@ -70,7 +70,7 @@ def get_instance(
 
 
 @router.post("", response_model=WooCommerceInstance, status_code=status.HTTP_201_CREATED)
-def create_instance(
+async def create_instance(
     instance: WooCommerceInstanceCreate,
     db: Session = Depends(get_db),
     current_user: Admin = Depends(get_current_user)
@@ -83,7 +83,7 @@ def create_instance(
             username=instance.odoo_username,
             password=instance.odoo_password
         )
-        uid = odoo_client.odoo_authenticate()
+        uid = await odoo_client.odoo_authenticate()
         if not uid:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -130,7 +130,7 @@ def create_instance(
 
 
 @router.put("/{instance_id}", response_model=WooCommerceInstance)
-def update_instance(
+async def update_instance(
     instance_id: int,
     instance_update: WooCommerceInstanceUpdate,
     db: Session = Depends(get_db),
@@ -144,7 +144,7 @@ def update_instance(
             username=instance_update.odoo_username,
             password=instance_update.odoo_password
         )
-        uid = odoo_client.odoo_authenticate()
+        uid = await odoo_client.odoo_authenticate()
         if not uid:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -208,7 +208,7 @@ def update_instance(
 
 
 @router.delete("/{instance_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_instance(
+async def delete_instance(
     instance_id: int,
     db: Session = Depends(get_db),
     current_user: Admin = Depends(get_current_user)
@@ -222,7 +222,7 @@ def delete_instance(
             username=instance.odoo_username,
             password=instance.odoo_password
         )
-        uid = odoo_client.odoo_authenticate()
+        uid = await odoo_client.odoo_authenticate()
         if uid:
             odoo_webhook_url_template = "{host}/api/v1/webhook-receiver/odoo/{instance_id}/order_update"
             webhook = odoo_client.get_webhook_by_url(

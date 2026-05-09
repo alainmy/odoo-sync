@@ -71,7 +71,6 @@ def category_for_export(
     __logger__.info(f"Authenticating with Odoo: {odoo_client.url}")
     auth = odoo_client.web_authentication(odoo_client.url)
     cookies = auth.cookies.get_dict()
-    cookies = auth.cookies.get_dict()
     image_helpers = image_helper.ImageHelper(session_id=cookies["session_id"])
     try:
         # Acquire distributed lock if Redis is available
@@ -151,25 +150,29 @@ def category_for_export(
                     f"Odoo category {existing_mapping.odoo_id}. Cannot map to {category_data.get('id')}."
                 )
                 return None
+        file_path = None
         image = None
         if 'image_1920' in category_data and category_data['image_1920']:
             product_image, file_path = image_helpers.download_and_save_image(
                 f"{odoo_config['url']}/web/image/product.public.category/{category_data['id']}/image_1920")
             image = product_image
+            __logger__.info(
+                f"Downloaded image for category {image} from Odoo")
+        category_data_wc = {
+                "name": category_data["name"],
+                "slug": slug,
+                "description": category_data.get("description", "")
+            }
+        if parent:
+            # parent is already the woocommerce_id (int)
+            category_data_wc["parent"] = parent
+        if image:
+            category_data_wc["image"] = {"src": image}
         if woocommerce_id:
             __logger__.info(
                 f"Category {category_data['name']} exists in WooCommerce (ID: {woocommerce_id})")
             # Update existing category
-            update_data = {"name": category_data["name"],
-                           "slug": slug,
-                           "image": {
-                               "src": image
-            },
-                "description": category_data.get("description", "")
-            }
-            if parent:
-                # parent is already the woocommerce_id (int)
-                update_data["parent"] = parent
+            update_data = category_data_wc
 
             # Get current WC category to compare
             if not existing_in_woo:
@@ -196,19 +199,8 @@ def category_for_export(
             # Create new category
             __logger__.info(
                 f"Category {category_data['name']} not found in WooCommerce, creating new")
-            category_data_wc = {
-                "name": category_data["name"],
-                "slug": slug,
-                "image": {
-                    "src": image
-                },
-                "description": category_data.get("description", "")
-            }
-            if parent:
-                # parent is already the woocommerce_id (int)
-                category_data_wc["parent"] = parent
             __logger__.info(
-                f"Creating category {category_data['name']} in WooCommerce")
+                f"Creating category {category_data} in WooCommerce")
             response = wc_request(
                 "POST", "products/categories", params=category_data_wc, wcapi=wcapi
             )
@@ -229,7 +221,7 @@ def category_for_export(
                 return None
 
             woocommerce_id = wc_product_id
-        image_helpers.remove_local_image([file_path])
+        image_helpers.remove_local_image([file_path]) if file_path else None
         # RE-CHECK existing_sync JUST BEFORE creating/updating to prevent race condition
         # Another worker may have created a record between initial check and now
         existing_sync = db.query(CategorySync).filter(

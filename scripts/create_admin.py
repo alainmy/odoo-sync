@@ -5,7 +5,7 @@ from passlib.hash import bcrypt
 from app.models.user_model import User
 from app.db.session import SessionLocal
 import sys
-sys.path.insert(0, '/app')
+sys.path.insert(0, '.')
 
 
 def create_admin_user():

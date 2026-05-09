@@ -52,8 +52,10 @@ def create_instance(db: Session, instance: WooCommerceInstanceCreate, user_id: i
             WooCommerceInstance.user_id == user_id
         ).update({"is_active": False})
 
+    data = instance.model_dump()
+    del data["website"]  # Eliminar el campo relacionado que no se guarda directamente
     db_instance = WooCommerceInstance(
-        **instance.model_dump(),
+        **data,
         user_id=user_id
     )
     db.add(db_instance)

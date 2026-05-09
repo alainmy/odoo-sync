@@ -15,6 +15,7 @@ from app.api.v1.endpoints.category_tag_management import router as category_tag_
 from app.api.v1.endpoints.attributes import router as attributes_router, management_router as attributes_management_router
 from app.api.instances import router as instances_router
 from app.api.v1.endpoints.delivery_methods import router as delivery_methods
+from app.api.v1.endpoints.shipping_methods import router as shipping_methods_router
 from app.api.v1.endpoints.task_monitoring import router as task_monitoring_router
 from app.api.v1.endpoints.pricelists import router as pricelists_router
 from app.api.v1.endpoints.webhooks import router as webhooks_router
@@ -29,7 +30,7 @@ _logger = logging.getLogger(__name__)
 
 
 app = FastAPI(lifespan=lifespan,
-              root_path="/api",
+            #   root_path="/api",
               docs_url="/docs",
               redoc_url="/redoc",
               openapi_url="/openapi.json"
@@ -108,6 +109,8 @@ app.include_router(woocommerce_router,
                    prefix="/woocommerce", tags=["woocommerce"])
 # app.include_router(books_router, prefix="/bookscraping", tags=["bookscraping"])
 app.include_router(invoice_router, prefix="/invoice", tags=["invoice"])
+app.include_router(shipping_methods_router,
+                   prefix="/api/v1/shipping-methods", tags=["shipping-methods"])
 app.include_router(projects_router, prefix="/projects", tags=["projects"])
 app.include_router(sync_logs_router, prefix="/api/v1/sync", tags=["sync-logs"])
 app.include_router(task_monitoring_router,

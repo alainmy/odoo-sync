@@ -18,6 +18,7 @@ from app.repositories.tag_sync_repository import TagSyncRepository
 from app.repositories.webhook_repository import WebhookRepository
 from app.repositories.task_log_repository import TaskLogRepository
 from app.repositories.instance_repository import InstanceRepository
+from app.repositories.shipping_method_repository import ShippingMethodRepository
 
 # For backward compatibility - maintain SyncRepository facade
 from sqlalchemy.orm import Session
@@ -201,6 +202,7 @@ __all__ = [
     'WebhookRepository',
     'TaskLogRepository',
     'InstanceRepository',
+    'ShippingMethodRepository',
     'SyncRepository',  # Legacy facade
     'get_sync_repository',  # Legacy DI function
 ]

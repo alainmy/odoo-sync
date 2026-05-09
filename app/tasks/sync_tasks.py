@@ -26,6 +26,13 @@ from app.tasks.task_monitoring import update_task_progress
 from app.tasks.sync_helpers import create_wc_api_client
 from app.services.woocommerce import get_wc_api_from_instance_config, \
     build_category_chain, category_for_export
+from app.services.woocommerce.shipping import (
+    normalize_odoo_carrier,
+    get_active_shipping_zone_id,
+    create_or_update_woocommerce_shipping_method
+)
+from app.models.shipping_method_sync import ShippingMethodSync
+from app.repositories import ShippingMethodRepository
 from app.models.admin import CategorySync, ProductSync, ProductVariantSync, WooCommerceInstance
 from app.utils.image_helper import ImageHelper
 from app.models.user_model import ClientSync
@@ -2010,6 +2017,245 @@ def sync_eco_category_hierarchy_to_woocommerce(
         logger.error(f"Error syncing category to WooCommerce: {exc}")
         raise self.retry(exc=exc, countdown=2 ** self.request.retries)
 
+
+@celery_app.task(
+    bind=True,
+    base=DatabaseTask,
+    name="app.tasks.sync_tasks.sync_tag_to_woocommerce",
+    max_retries=3,
+    default_retry_delay=60
+)
+
+
+
+@celery_app.task(
+    bind=True,
+    base=DatabaseTask,
+    name="app.tasks.sync_tasks.full_shipping_method_sync_odoo_to_woocommerce",
+    max_retries=1
+)
+@log_celery_task_with_retry
+def full_shipping_method_sync_odoo_to_woocommerce(
+    self,
+    instance_id: int,
+    odoo_config: Dict[str, str] = None,
+    wc_config: Dict[str, str] = None
+) -> Dict[str, Any]:
+    """
+    Perform full shipping method sync from Odoo to WooCommerce for a specific instance.
+    
+    This task uses the background_shipping_sync function but as a proper Celery task.
+    
+    Args:
+        instance_id: WooCommerce instance ID
+        odoo_config: Odoo configuration dict (url, db, username, password)
+        wc_config: WooCommerce configuration dict (url, consumer_key, consumer_secret)
+        
+    Returns:
+        Dict with sync statistics
+    """
+    # Generate a task ID for tracking
+    import uuid
+    task_id = str(uuid.uuid4())
+    
+    try:
+        logger.info(
+            f"Starting full shipping method sync: Odoo -> WooCommerce (instance {instance_id})")
+        
+        # Import here to avoid circular imports
+        from app.services.woocommerce.shipping import background_shipping_sync
+        from app.db.session import SessionLocal
+        from app.models.admin import WooCommerceInstance
+        
+        # Get database session
+        db = SessionLocal()
+        
+        try:
+            # Get instance configuration
+            instance = db.query(WooCommerceInstance).filter(
+                WooCommerceInstance.id == instance_id
+            ).first()
+            
+            if not instance:
+                logger.error(f"Instance {instance_id} not found")
+                return {
+                    "success": False,
+                    "error": f"Instance {instance_id} not found"
+                }
+            
+            # Initialize WooCommerce API client
+            if not wc_config:
+                wc_config = {
+                    "url": instance.woocommerce_url,
+                    "consumer_key": instance.woocommerce_consumer_key,
+                    "consumer_secret": instance.woocommerce_consumer_secret
+                }
+            
+            from app.services.woocommerce.client import get_wc_api_from_instance_config
+            wcapi = get_wc_api_from_instance_config(wc_config)
+            
+            if not wcapi:
+                logger.error("Could not initialize WooCommerce API client")
+                return {
+                    "success": False,
+                    "error": "Could not initialize WooCommerce API client"
+                }
+            
+            # Run the background shipping sync
+            # Note: background_shipping_sync is async, so we need to handle that
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(
+                    background_shipping_sync(task_id=task_id, wcapi=wcapi)
+                )
+            finally:
+                loop.close()
+            
+            # For now, we'll return a basic result since background_shipping_sync
+            # doesn't return detailed stats. In a full implementation, we'd track these.
+            return {
+                "success": True,
+                "task_id": task_id,
+                "status": "started",
+                "message": f"Shipping method sync started for instance {instance_id}"
+            }
+            
+        finally:
+            db.close()
+        
+    except Exception as exc:
+        logger.error(f"Error in full shipping method sync: {exc}")
+        return {
+            "success": False,
+            "task_id": task_id if 'task_id' in locals() else None,
+            "error": str(exc)
+        }
+
+
+@celery_app.task(
+    bind=True,
+    base=DatabaseTask,
+    name="app.tasks.sync_tasks.sync_shipping_method_to_woocommerce",
+    max_retries=3,
+    default_retry_delay=60
+)
+@log_celery_task_with_retry
+def sync_shipping_method_to_woocommerce(
+    self,
+    odoo_carrier_data: Dict[str, Any],
+    instance_id: int,
+    zone_id: int = None,
+    create_if_not_exists: bool = True,
+    update_existing: bool = True,
+    odoo_config: Dict[str, str] = None,
+    wc_config: Dict[str, str] = None
+) -> Dict[str, Any]:
+    """
+    Sync a single shipping method from Odoo to WooCommerce.
+    
+    Args:
+        odoo_carrier_data: Odoo delivery carrier data dictionary
+        instance_id: WooCommerce instance ID
+        zone_id: Shipping zone ID (optional, will get/create default if not provided)
+        create_if_not_exists: Create method if it doesn't exist
+        update_existing: Update method if it exists
+        odoo_config: Odoo configuration dict (url, db, username, password)
+        wc_config: WooCommerce configuration dict (url, consumer_key, consumer_secret)
+        
+    Returns:
+        Dict with sync result
+    """
+    try:
+        logger.info(
+            f"Syncing Odoo shipping method {odoo_carrier_data.get('id')} to WooCommerce (instance {instance_id})")
+        
+        # Import here to avoid circular imports
+        from app.services.woocommerce.shipping import (
+            normalize_odoo_carrier,
+            get_active_shipping_zone_id,
+            create_or_update_woocommerce_shipping_method
+        )
+        from app.db.session import SessionLocal
+        from app.models.admin import WooCommerceInstance
+        
+        # Get database session
+        db = SessionLocal()
+        
+        try:
+            # Get instance configuration
+            instance = db.query(WooCommerceInstance).filter(
+                WooCommerceInstance.id == instance_id
+            ).first()
+            
+            if not instance:
+                logger.error(f"Instance {instance_id} not found")
+                return {
+                    "success": False,
+                    "error": f"Instance {instance_id} not found"
+                }
+            
+            # Initialize WooCommerce API client
+            if not wc_config:
+                wc_config = {
+                    "url": instance.woocommerce_url,
+                    "consumer_key": instance.woocommerce_consumer_key,
+                    "consumer_secret": instance.woocommerce_consumer_secret
+                }
+            
+            from app.services.woocommerce.client import get_wc_api_from_instance_config
+            wcapi = get_wc_api_from_instance_config(wc_config)
+            
+            if not wcapi:
+                logger.error("Could not initialize WooCommerce API client")
+                return {
+                    "success": False,
+                    "error": "Could not initialize WooCommerce API client"
+                }
+            
+            # Get or create shipping zone if not provided
+            if not zone_id:
+                import asyncio
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    zone_id_result = loop.run_until_complete(
+                        get_active_shipping_zone_id(wcapi)
+                    )
+                    if not zone_id_result:
+                        logger.error("Could not get or create shipping zone")
+                        return {
+                            "success": False,
+                            "error": "Could not get or create shipping zone"
+                        }
+                    zone_id = zone_id_result["id"]
+                finally:
+                    loop.close()
+            
+            # Normalize carrier data
+            normalized_carrier = normalize_odoo_carrier(odoo_carrier_data)
+            
+            # Sync the shipping method
+            sync_result = create_or_update_woocommerce_shipping_method(
+                odoo_carrier=normalized_carrier,
+                wc_method_data={},  # Will be populated inside the function
+                instance_id=instance_id,
+                zone_id=zone_id,
+                create_if_not_exists=create_if_not_exists,
+                update_existing=update_existing,
+                db=db,
+                wcapi=wcapi
+            )
+            
+            return sync_result
+            
+        finally:
+            db.close()
+        
+    except Exception as exc:
+        logger.error(f"Error syncing shipping method to WooCommerce: {exc}")
+        raise self.retry(exc=exc, countdown=2 ** self.request.retries)
 
 @celery_app.task(
     bind=True,

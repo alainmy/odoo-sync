@@ -36,6 +36,14 @@ from app.services.woocommerce.converters import (
     odoo_product_to_woocommerce
 )
 
+from app.services.woocommerce.shipping import (
+    create_or_update_woocommerce_shipping_method,
+    find_woocommerce_shipping_zone_by_name,
+    find_woocommerce_shipping_zone_by_id,
+    find_woocommerce_shipping_method_in_zone,
+    find_woocommerce_shipping_method_by_name_in_zone
+)
+
 from app.services.woocommerce.utils import (
     fetch_wc_product,
     background_full_sync,
@@ -66,6 +74,12 @@ __all__ = [
     'category_for_export',
     # Tags
     'manage_tags_for_export',
+    # Shipping
+    'create_or_update_woocommerce_shipping_method',
+    'find_woocommerce_shipping_zone_by_name',
+    'find_woocommerce_shipping_zone_by_id',
+    'find_woocommerce_shipping_method_in_zone',
+    'find_woocommerce_shipping_method_by_name_in_zone',
     # Converters
     'woocommerce_type_to_odoo_type',
     'odoo_product_to_woocommerce',
