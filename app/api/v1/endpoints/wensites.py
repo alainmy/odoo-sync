@@ -47,7 +47,7 @@ async def read_websites(
     )
 
 
-@router.post("/", response_model=WebsiteListResponse)
+@router.post("/get", response_model=WebsiteListResponse)
 async def websites_from_odoo(
     request: Request,
     db: Session = Depends(get_db),
