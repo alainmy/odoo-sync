@@ -113,7 +113,7 @@ class Settings(BaseSettings):
     mysql_root_password: str = "root_password"
 
     class Config:
-        env_file = "../../.env"
+        env_file = "./.env"
 
 
 settings = Settings()
