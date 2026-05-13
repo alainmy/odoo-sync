@@ -1432,7 +1432,21 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                     "price_unit": float(line.get("price", 0)),
                     "name": line.get("name", "Product"),
                 }))
-
+        # Buscar  producto de de delivery in odoo
+        delivery = client.search_read_sync(
+            "product.product",
+            domain=[("default_code", "=", "Delivery_007")],
+            fields=["id","name"],
+            limit=1
+        )
+        if delivery:
+            delivery = delivery[0]
+            order_lines.append((0, 0, {
+                    "product_id": delivery["id"],
+                    "product_uom_qty": 1,
+                    "price_unit": order_data["shipping_total"],
+                    "name": "WC - Delivery",
+                }))
         # Validate that we have at least one order line
         if not order_lines:
             logger.warning(
