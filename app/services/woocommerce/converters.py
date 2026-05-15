@@ -205,4 +205,5 @@ def odoo_product_to_woocommerce(
         images=images,
         weight=weight,
         dimensions=dimensions,
+        tax_status="taxable" if odoo_product.taxes_id else "none",
     )

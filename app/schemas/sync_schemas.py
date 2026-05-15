@@ -136,3 +136,76 @@ class SyncStatisticsResponse(BaseModel):
     modified: int
     errors: int
     last_sync: Optional[datetime] = None
+
+
+class OdooTaxWithSyncStatus(BaseModel):
+    """Odoo tax with sync status information"""
+    id: int
+    name: str
+    amount: Optional[float] = None
+    description: Optional[str] = None
+    price_include: Optional[bool] = None
+    type_tax_use: Optional[str] = None
+    active: Optional[bool] = None
+    write_date: Optional[str] = None
+
+    sync_status: str = Field(..., description="never_synced, synced, error")
+    woocommerce_id: Optional[int] = None
+    last_synced_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class TaxSyncStatusResponse(BaseModel):
+    """Response with tax and its sync status"""
+    odoo_id: int
+    name: str
+    rate: Optional[float] = None
+    amount: Optional[float] = None
+    odoo_description: Optional[str] = None
+    price_include: bool = False
+    tax_scope: Optional[str] = None
+
+    sync_status: str
+    woocommerce_id: Optional[int] = None
+    last_synced_at: Optional[datetime] = None
+
+    has_error: bool = False
+    error_message: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class BatchTaxSyncRequest(BaseModel):
+    """Request to sync multiple taxes"""
+    odoo_ids: List[int] = Field(..., min_items=1, description="List of Odoo tax IDs to sync")
+    force_sync: bool = Field(default=False, description="Force sync even if already synced")
+    create_if_not_exists: bool = Field(default=True, description="Create in WooCommerce if doesn't exist")
+    update_existing: bool = Field(default=True, description="Update existing WooCommerce taxes")
+
+
+class BatchTaxSyncResponse(BaseModel):
+    """Response for batch tax sync operation"""
+    task_id: Optional[str] = None
+    status: str
+    total_taxes: int
+    message: str
+    results: Optional[List[dict]] = None
+
+
+class OdooTaxListResponse(BaseModel):
+    """Response with Odoo taxes and sync status"""
+    total_count: int
+    taxes: List[TaxSyncStatusResponse]
+    filters_applied: dict
+
+
+class TaxSyncStatisticsResponse(BaseModel):
+    """Statistics about tax sync status"""
+    total: int
+    synced: int
+    never_synced: int
+    errors: int
+    last_sync: Optional[datetime] = None

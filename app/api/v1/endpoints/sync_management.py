@@ -27,9 +27,15 @@ from app.schemas.sync_schemas import (
     SyncQueueItem,
     DetectChangesRequest,
     DetectChangesResponse,
-    SyncStatisticsResponse
+    SyncStatisticsResponse,
+    OdooTaxListResponse,
+    TaxSyncStatusResponse,
+    BatchTaxSyncRequest,
+    BatchTaxSyncResponse,
+    TaxSyncStatisticsResponse
 )
-from app.tasks.sync_tasks import sync_product_to_woocommerce
+from app.tasks.sync_tasks import sync_product_to_woocommerce, sync_tax_to_woocommerce
+from app.repositories.tax_sync_repository import TaxSyncRepository
 from app.tasks.task_monitoring import create_task_response
 from app.api.v1.endpoints.odoo import get_session_id, get_odoo_from_active_instance
 from celery import group
@@ -220,7 +226,8 @@ async def batch_sync_products(
                 "product_template_image_ids",
                 "is_published",
                 "weight",
-                'public_categ_ids'
+                'public_categ_ids',
+                "taxes_id",
             ],
             limit=len(odoo_ids)
         )
@@ -492,4 +499,251 @@ async def get_sync_statistics(
 
     except Exception as e:
         logger.error(f"Error getting statistics: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/taxes", response_model=OdooTaxListResponse)
+async def list_odoo_taxes_with_sync_status(
+    limit: int = Query(50, le=200, description="Number of taxes to return"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    filter_status: Optional[str] = Query(
+        None,
+        description="Filter by sync status: never_synced, synced, error"
+    ),
+    search: Optional[str] = Query(
+        None, description="Search by tax name"),
+    request: Request = None,
+    db: Session = Depends(get_db),
+    odoo: OdooClient = Depends(get_odoo_from_active_instance),
+    current_user: Admin = Depends(get_current_user)
+):
+    """
+    List Odoo taxes with their WooCommerce sync status.
+    """
+    try:
+        active_instance = get_active_instance(db, current_user)
+        uid = await odoo.odoo_authenticate()
+        if not uid:
+            raise HTTPException(
+                status_code=301, detail="Failed to authenticate with Odoo")
+
+        domain = [["type_tax_use", "=", "sale"],
+                  ["amount_type", "=", "percent"],
+                  ["active", "=", True]]
+        if search:
+            domain.append(["name", "ilike", search])
+
+        search_count = await odoo.search_count(
+            uid, "account.tax", domain=[
+                ["type_tax_use", "=", "sale"],
+                ["amount_type", "=", "percent"],
+                ["active", "=", True]
+            ]
+        )
+        tax_count = search_count["result"]
+
+        odoo_response = await odoo.search_read(
+            uid,
+            "account.tax",
+            domain=domain if domain else [],
+            fields=[
+                "id",
+                "name",
+                "amount",
+                "description",
+                "price_include",
+                "type_tax_use",
+                "active",
+                "write_date",
+                "country_id"
+            ],
+            limit=limit,
+            offset=offset
+        )
+
+        odoo_taxes = odoo_response.get("result", [])
+        logger.info(f"Fetched {len(odoo_taxes)} taxes from Odoo")
+
+        instance_id = get_active_instance_id(db, current_user)
+        sync_repo = TaxSyncRepository(db)
+        enriched_taxes = sync_repo.get_taxes_with_sync_status(
+            odoo_taxes,
+            instance_id=instance_id,
+            filter_status=filter_status
+        )
+
+        paginated_taxes = enriched_taxes
+
+        return OdooTaxListResponse(
+            total_count=tax_count,
+            taxes=[TaxSyncStatusResponse(
+                odoo_id=t.get("id"),
+                name=t.get("name", ""),
+                rate=float(t.get("amount", 0)) *
+                100 if t.get("amount") else None,
+                amount=t.get("amount"),
+                odoo_description=t.get("description", "") if t.get(
+                    "description") else None,
+                price_include=t.get("price_include", False) if t.get(
+                    "price_include") is not None else False,
+                tax_scope="sales" if t.get("type_tax_use") == "sale" else "purchase" if t.get(
+                    "type_tax_use") == "purchase" else None,
+                sync_status=t.get("sync_status", "never_synced") if t.get(
+                    "sync_status") else "never_synced",
+                woocommerce_id=t.get("woocommerce_id", None) if t.get(
+                    "woocommerce_id") else None,
+                last_synced_at=t.get("last_synced_at", None) if t.get(
+                    "last_synced_at") else None
+            ) for t in paginated_taxes],
+            filters_applied={
+                "status": filter_status,
+                "search": search,
+                "limit": limit,
+                "offset": offset
+            }
+        )
+    except HTTPException as ex:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Error fetching taxes with sync status: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching taxes: {str(e)}")
+
+
+@router.post("/taxes/batch-sync", response_model=BatchTaxSyncResponse)
+async def batch_sync_taxes(
+    request_data: BatchTaxSyncRequest,
+    db: Session = Depends(get_db),
+    odoo: OdooClient = Depends(get_odoo_from_active_instance),
+    current_user: Admin = Depends(get_current_user)
+):
+    """
+    Queue batch synchronization of taxes from Odoo to WooCommerce.
+    """
+    try:
+        odoo_ids = request_data.odoo_ids
+        logger.info(f"Starting batch sync for {len(odoo_ids)} taxes")
+
+        uid = await odoo.odoo_authenticate()
+
+        odoo_response = await odoo.search_read(
+            uid,
+            "account.tax",
+            domain=[["id", "in", odoo_ids]],
+            fields=[
+                "id",
+                "name",
+                "amount",
+                "description",
+                "price_include",
+                "type_tax_use",
+                "active",
+                "write_date",
+                "country_id",
+            ],
+            limit=len(odoo_ids)
+        )
+
+        taxes = odoo_response.get("result", [])
+
+        if not taxes:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No taxes found in Odoo with IDs: {odoo_ids}"
+            )
+
+        logger.info(f"Found {len(taxes)} taxes in Odoo")
+
+        instance_id = get_active_instance_id(db, current_user)
+
+        instance = crud_instance.get_active_instance(
+            db, user_id=current_user.id)
+        odoo_config = {
+            "url": instance.odoo_url,
+            "db": instance.odoo_db,
+            "username": instance.odoo_username,
+            "password": instance.odoo_password
+        }
+        wc_config = {
+            "url": instance.woocommerce_url,
+            "consumer_key": instance.woocommerce_consumer_key,
+            "consumer_secret": instance.woocommerce_consumer_secret
+        }
+
+        sync_repo = TaxSyncRepository(db)
+        updated_count = sync_repo.mark_taxes_for_sync(odoo_ids, instance_id)
+        logger.info(
+            f"Marked {updated_count} existing sync records as needs_sync")
+
+        tasks = []
+        for tax in taxes:
+            task = sync_tax_to_woocommerce.apply_async(
+                args=[tax, instance_id],
+                kwargs={
+                    "odoo_config": odoo_config,
+                    "wc_config": wc_config,
+                    "create_if_not_exists": request_data.create_if_not_exists,
+                    "update_existing": request_data.update_existing
+                },
+                queue='sync_queue'
+            )
+            tasks.append({
+                "odoo_id": tax["id"],
+                "name": tax["name"],
+                "task_id": task.id
+            })
+
+        logger.info(f"Queued {len(tasks)} Celery tasks for tax sync")
+
+        return BatchTaxSyncResponse(
+            task_id=tasks[0]["task_id"] if tasks else None,
+            status="queued",
+            total_taxes=len(tasks),
+            message=f"Successfully queued {len(tasks)} taxes for sync to WooCommerce",
+            results=tasks
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in batch tax sync: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"Batch tax sync error: {str(e)}")
+
+
+@router.get("/taxes/statistics", response_model=TaxSyncStatisticsResponse)
+async def get_tax_sync_statistics(
+    db: Session = Depends(get_db),
+    current_user: Admin = Depends(get_current_user)
+):
+    """
+    Get tax sync statistics for the current user's active instance.
+    """
+    try:
+        instance = crud_instance.get_active_instance(
+            db, user_id=current_user.id)
+        instance_id = instance.id if instance else None
+
+        if not instance_id:
+            raise HTTPException(
+                status_code=404,
+                detail="No active instance found"
+            )
+
+        sync_repo = TaxSyncRepository(db)
+        stats = sync_repo.get_statistics(instance_id)
+
+        return TaxSyncStatisticsResponse(
+            total=stats["total"],
+            synced=stats["synced"],
+            never_synced=stats["never_synced"],
+            errors=stats["errors"],
+            last_sync=stats["last_sync"]
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting tax statistics: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

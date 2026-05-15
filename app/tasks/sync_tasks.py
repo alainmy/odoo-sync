@@ -34,6 +34,7 @@ from app.services.woocommerce.shipping import (
 from app.models.shipping_method_sync import ShippingMethodSync
 from app.repositories import ShippingMethodRepository
 from app.models.admin import CategorySync, ProductSync, ProductVariantSync, WooCommerceInstance
+from app.models.tax_sync import TaxSync
 from app.utils.image_helper import ImageHelper
 from app.models.user_model import ClientSync
 from app.repositories.client_sync_repository import ClientSyncRepository
@@ -696,6 +697,9 @@ def sync_product_to_woocommerce(
                 elif key == 'attribute_line_ids':
                     # many2many field for attributes - keep as is for now
                     normalized_data[key] = value
+                elif key == 'taxes_id':
+                    # many2many field for taxes - keep as is for now
+                    normalized_data[key] = value
                 elif key == 'public_categ_ids' and not instance.category_from_product:
 
                     categ_sync = self.db.query(CategorySync).filter(
@@ -1238,6 +1242,13 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
         # Initialize repository once for all operations
         client_sync_repo = ClientSyncRepository(self.db)
 
+        # Check if order already exists
+        existing_orders = client.search_read_sync(
+            "sale.order",
+            domain=[("client_order_ref", "=", f"WC-{wc_order_id}")],
+            fields=["id", 'state'],
+            limit=1
+        )
         if not customer_email or not customer_id:
             logger.warning(f"Order {wc_order_id} missing email or customer_id")
             return {"success": False, "error": "Missing email or customer_id"}
@@ -1388,9 +1399,36 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
 
         # ========== STEP 4: Create Order Lines ==========
         order_lines = []
+        order_client = OrderClient(
+            instance.odoo_url,
+            instance.odoo_db,
+            instance.odoo_username,
+            instance.odoo_password
+        )
+        if existing_orders:
+            order_client.write(
+                model='sale.order',
+                vals={
+                    "order_line": [(5, 0, 0)],  # Remove existing lines
+                },
+                record_id=existing_orders[0]["id"]
+            )
+            action = "updated"
         for line in order_data.get("line_items", []):
             product_id = None
-
+            # get taxes
+            taxes_ids = []
+            if line.get("taxes"):
+                taxes_ids = [t.get("id") for t in line.get("taxes")]
+            logger.info(f"Taxes ids: {taxes_ids}")
+            taxes_sync = self.db.query(TaxSync).filter(
+                TaxSync.woocommerce_id.in_(taxes_ids),
+                TaxSync.instance_id == instance_id
+            ).all()
+            logger.info(f"Taxes sync: {taxes_sync}")
+            odoo_taxes_ids = [
+                t.odoo_id for t in taxes_sync] if taxes_sync else []
+            logger.info(f"Odoo taxes ids: {odoo_taxes_ids}")
             # Try to find product by sync record first
             product_sync = None
             if line.get("product_id") and line.get("variation_id") != 0:
@@ -1431,22 +1469,26 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                     "product_uom_qty": int(line.get("quantity", 1)),
                     "price_unit": float(line.get("price", 0)),
                     "name": line.get("name", "Product"),
+                    "tax_id": odoo_taxes_ids
                 }))
         # Buscar  producto de de delivery in odoo
         delivery = client.search_read_sync(
             "product.product",
             domain=[("default_code", "=", "Delivery_007")],
-            fields=["id","name"],
+            fields=["id", "name"],
             limit=1
         )
         if delivery:
             delivery = delivery[0]
-            order_lines.append((0, 0, {
-                    "product_id": delivery["id"],
-                    "product_uom_qty": 1,
-                    "price_unit": order_data["shipping_total"],
-                    "name": "WC - Delivery",
-                }))
+            shipping_lines = order_data["shipping_lines"]
+            if shipping_lines:
+                for shipping_line in shipping_lines:
+                    order_lines.append((0, 0, {
+                        "product_id": delivery["id"],
+                        "product_uom_qty": 1,
+                        "price_unit": shipping_line["price"],
+                        "name": f"WC - Delivery - {shipping_line['method_title']}",
+                    }))
         # Validate that we have at least one order line
         if not order_lines:
             logger.warning(
@@ -1472,19 +1514,6 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
         }
         logger.info(f"Prepared sale order data for Odoo: {sale_order_data}")
 
-        # Check if order already exists
-        existing_orders = client.search_read_sync(
-            "sale.order",
-            domain=[("client_order_ref", "=", f"WC-{wc_order_id}")],
-            fields=["id", 'state'],
-            limit=1
-        )
-        order_client = OrderClient(
-            instance.odoo_url,
-            instance.odoo_db,
-            instance.odoo_username,
-            instance.odoo_password
-        )
         if existing_orders:
             logger.info(
                 f"Order already exists in Odoo: {existing_orders[0]['id']}")
@@ -1496,7 +1525,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             if order_state == 'draft':
                 try:
 
-                    if order_data["status"] == "processing":
+                    if order_data["status"] in ["processing", "completed"]:
                         order_client.cal_method(
                             model='sale.order',
                             metod='action_confirm',
@@ -1599,7 +1628,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                 f"Creating new sale order in Odoo for WooCommerce order {wc_order_id}")
             order_id = order_client.create(
                 model="sale.order", vals=sale_order_data)
-            if sale_order_data["state"] == "completed":
+            if sale_order_data["state"] == "completed" or sale_order_data["state"] == "processing":
                 order_client.cal_method(
                     model='sale.order',
                     metod='action_confirm',
@@ -2039,9 +2068,6 @@ def sync_eco_category_hierarchy_to_woocommerce(
     max_retries=3,
     default_retry_delay=60
 )
-
-
-
 @celery_app.task(
     bind=True,
     base=DatabaseTask,
@@ -2057,46 +2083,46 @@ def full_shipping_method_sync_odoo_to_woocommerce(
 ) -> Dict[str, Any]:
     """
     Perform full shipping method sync from Odoo to WooCommerce for a specific instance.
-    
+
     This task uses the background_shipping_sync function but as a proper Celery task.
-    
+
     Args:
         instance_id: WooCommerce instance ID
         odoo_config: Odoo configuration dict (url, db, username, password)
         wc_config: WooCommerce configuration dict (url, consumer_key, consumer_secret)
-        
+
     Returns:
         Dict with sync statistics
     """
     # Generate a task ID for tracking
     import uuid
     task_id = str(uuid.uuid4())
-    
+
     try:
         logger.info(
             f"Starting full shipping method sync: Odoo -> WooCommerce (instance {instance_id})")
-        
+
         # Import here to avoid circular imports
         from app.services.woocommerce.shipping import background_shipping_sync
         from app.db.session import SessionLocal
         from app.models.admin import WooCommerceInstance
-        
+
         # Get database session
         db = SessionLocal()
-        
+
         try:
             # Get instance configuration
             instance = db.query(WooCommerceInstance).filter(
                 WooCommerceInstance.id == instance_id
             ).first()
-            
+
             if not instance:
                 logger.error(f"Instance {instance_id} not found")
                 return {
                     "success": False,
                     "error": f"Instance {instance_id} not found"
                 }
-            
+
             # Initialize WooCommerce API client
             if not wc_config:
                 wc_config = {
@@ -2104,17 +2130,17 @@ def full_shipping_method_sync_odoo_to_woocommerce(
                     "consumer_key": instance.woocommerce_consumer_key,
                     "consumer_secret": instance.woocommerce_consumer_secret
                 }
-            
+
             from app.services.woocommerce.client import get_wc_api_from_instance_config
             wcapi = get_wc_api_from_instance_config(wc_config)
-            
+
             if not wcapi:
                 logger.error("Could not initialize WooCommerce API client")
                 return {
                     "success": False,
                     "error": "Could not initialize WooCommerce API client"
                 }
-            
+
             # Run the background shipping sync
             # Note: background_shipping_sync is async, so we need to handle that
             import asyncio
@@ -2126,7 +2152,7 @@ def full_shipping_method_sync_odoo_to_woocommerce(
                 )
             finally:
                 loop.close()
-            
+
             # For now, we'll return a basic result since background_shipping_sync
             # doesn't return detailed stats. In a full implementation, we'd track these.
             return {
@@ -2135,10 +2161,10 @@ def full_shipping_method_sync_odoo_to_woocommerce(
                 "status": "started",
                 "message": f"Shipping method sync started for instance {instance_id}"
             }
-            
+
         finally:
             db.close()
-        
+
     except Exception as exc:
         logger.error(f"Error in full shipping method sync: {exc}")
         return {
@@ -2168,7 +2194,7 @@ def sync_shipping_method_to_woocommerce(
 ) -> Dict[str, Any]:
     """
     Sync a single shipping method from Odoo to WooCommerce.
-    
+
     Args:
         odoo_carrier_data: Odoo delivery carrier data dictionary
         instance_id: WooCommerce instance ID
@@ -2177,14 +2203,14 @@ def sync_shipping_method_to_woocommerce(
         update_existing: Update method if it exists
         odoo_config: Odoo configuration dict (url, db, username, password)
         wc_config: WooCommerce configuration dict (url, consumer_key, consumer_secret)
-        
+
     Returns:
         Dict with sync result
     """
     try:
         logger.info(
             f"Syncing Odoo shipping method {odoo_carrier_data.get('id')} to WooCommerce (instance {instance_id})")
-        
+
         # Import here to avoid circular imports
         from app.services.woocommerce.shipping import (
             normalize_odoo_carrier,
@@ -2193,23 +2219,23 @@ def sync_shipping_method_to_woocommerce(
         )
         from app.db.session import SessionLocal
         from app.models.admin import WooCommerceInstance
-        
+
         # Get database session
         db = SessionLocal()
-        
+
         try:
             # Get instance configuration
             instance = db.query(WooCommerceInstance).filter(
                 WooCommerceInstance.id == instance_id
             ).first()
-            
+
             if not instance:
                 logger.error(f"Instance {instance_id} not found")
                 return {
                     "success": False,
                     "error": f"Instance {instance_id} not found"
                 }
-            
+
             # Initialize WooCommerce API client
             if not wc_config:
                 wc_config = {
@@ -2217,17 +2243,17 @@ def sync_shipping_method_to_woocommerce(
                     "consumer_key": instance.woocommerce_consumer_key,
                     "consumer_secret": instance.woocommerce_consumer_secret
                 }
-            
+
             from app.services.woocommerce.client import get_wc_api_from_instance_config
             wcapi = get_wc_api_from_instance_config(wc_config)
-            
+
             if not wcapi:
                 logger.error("Could not initialize WooCommerce API client")
                 return {
                     "success": False,
                     "error": "Could not initialize WooCommerce API client"
                 }
-            
+
             # Get or create shipping zone if not provided
             if not zone_id:
                 import asyncio
@@ -2246,10 +2272,10 @@ def sync_shipping_method_to_woocommerce(
                     zone_id = zone_id_result["id"]
                 finally:
                     loop.close()
-            
+
             # Normalize carrier data
             normalized_carrier = normalize_odoo_carrier(odoo_carrier_data)
-            
+
             # Sync the shipping method
             sync_result = create_or_update_woocommerce_shipping_method(
                 odoo_carrier=normalized_carrier,
@@ -2261,15 +2287,16 @@ def sync_shipping_method_to_woocommerce(
                 db=db,
                 wcapi=wcapi
             )
-            
+
             return sync_result
-            
+
         finally:
             db.close()
-        
+
     except Exception as exc:
         logger.error(f"Error syncing shipping method to WooCommerce: {exc}")
         raise self.retry(exc=exc, countdown=2 ** self.request.retries)
+
 
 @celery_app.task(
     bind=True,
@@ -2342,3 +2369,211 @@ def sync_tag_to_woocommerce(
     except Exception as exc:
         logger.error(f"Error syncing tag to WooCommerce: {exc}")
         raise self.retry(exc=exc, countdown=2 ** self.request.retries)
+
+
+@celery_app.task(
+    bind=True,
+    base=DatabaseTask,
+    name="app.tasks.sync_tasks.sync_tax_to_woocommerce",
+    max_retries=3,
+    default_retry_delay=60
+)
+@log_celery_task_with_retry
+def sync_tax_to_woocommerce(
+    self,
+    odoo_tax_data: Dict[str, Any],
+    instance_id: int,
+    odoo_config: Dict[str, str] = None,
+    wc_config: Dict[str, str] = None,
+    create_if_not_exists: bool = True,
+    update_existing: bool = True
+) -> Dict[str, Any]:
+    """
+    Sync a single tax from Odoo to WooCommerce.
+
+    Args:
+        odoo_tax_data: Odoo tax data dictionary
+        instance_id: WooCommerce instance ID
+        odoo_config: Odoo configuration dict (url, db, username, password)
+        wc_config: WooCommerce configuration dict (url, consumer_key, consumer_secret)
+        create_if_not_exists: Create tax if it doesn't exist
+        update_existing: Update tax if it exists
+
+    Returns:
+        Dict with sync result
+    """
+    try:
+        logger.info(
+            f"Syncing Odoo tax {odoo_tax_data.get('id')} to WooCommerce (instance {instance_id})")
+
+        wcapi = None
+        if wc_config:
+            wcapi = get_wc_api_from_instance_config(wc_config)
+
+        from app.services.woocommerce.taxes import sync_tax_to_woocommerce as sync_tax_func
+
+        result = sync_tax_func(
+            tax_data=odoo_tax_data,
+            db=self.db,
+            wcapi=wcapi,
+            instance_id=instance_id,
+            odoo_config=odoo_config,
+            create_if_not_exists=create_if_not_exists,
+            update_existing=update_existing
+        )
+
+        if result and result.get("success"):
+            logger.info(
+                f"Tax synced successfully: Odoo {odoo_tax_data.get('id')} -> WC {result.get('woocommerce_id')}")
+            return {
+                "success": True,
+                "action": result.get("action", "synced"),
+                "odoo_id": odoo_tax_data.get("id"),
+                "woocommerce_id": result.get("woocommerce_id"),
+                "name": result.get("name"),
+                "rate": result.get("rate"),
+                "message": f"Tax {result.get('name')} synced successfully"
+            }
+        else:
+            logger.warning(
+                f"Tax sync returned no result: {odoo_tax_data.get('name')}")
+            return {
+                "success": False,
+                "action": "failed",
+                "odoo_id": odoo_tax_data.get("id"),
+                "woocommerce_id": None,
+                "message": f"Failed to sync tax {odoo_tax_data.get('name')}"
+            }
+
+    except Exception as exc:
+        logger.error(f"Error syncing tax to WooCommerce: {exc}", exc_info=True)
+        raise self.retry(exc=exc, countdown=2 ** self.request.retries)
+
+
+@celery_app.task(
+    bind=True,
+    base=DatabaseTask,
+    name="app.tasks.sync_tasks.full_tax_sync_odoo_to_woocommerce",
+    max_retries=1
+)
+@log_celery_task_with_retry
+def full_tax_sync_odoo_to_woocommerce(
+    self,
+    instance_id: int,
+    odoo_config: Dict[str, str] = None,
+    wc_config: Dict[str, str] = None
+) -> Dict[str, Any]:
+    """
+    Perform full tax sync from Odoo to WooCommerce for a specific instance.
+
+    Args:
+        instance_id: WooCommerce instance ID
+        odoo_config: Odoo configuration dict (url, db, username, password)
+        wc_config: WooCommerce configuration dict (url, consumer_key, consumer_secret)
+
+    Returns:
+        Dict with sync statistics
+    """
+    total_processed = 0
+    total_created = 0
+    total_updated = 0
+    total_errors = 0
+
+    try:
+        logger.info(
+            f"Starting full tax sync: Odoo -> WooCommerce (instance {instance_id})")
+
+        if not odoo_config:
+            from app.models.admin import WooCommerceInstance
+            instance = self.db.query(WooCommerceInstance).filter(
+                WooCommerceInstance.id == instance_id
+            ).first()
+            if instance:
+                odoo_config = {
+                    "url": instance.odoo_url,
+                    "db": instance.odoo_db,
+                    "username": instance.odoo_username,
+                    "password": instance.odoo_password
+                }
+                wc_config = {
+                    "url": instance.woocommerce_url,
+                    "consumer_key": instance.woocommerce_consumer_key,
+                    "consumer_secret": instance.woocommerce_consumer_secret
+                }
+
+        odoo_client = OdooClient(
+            odoo_config["url"],
+            odoo_config["db"],
+            odoo_config["username"],
+            odoo_config["password"]
+        )
+
+        wcapi = None
+        if wc_config:
+            wcapi = get_wc_api_from_instance_config(wc_config)
+
+        from app.services.woocommerce.taxes import get_odoo_taxes
+
+        taxes = get_odoo_taxes(
+            odoo_client=odoo_client,
+            domain=[["active", "=", True]],
+            fields=["id", "name", "amount", "description",
+                    "price_include", "type_tax_use", "active", "write_date"]
+        )
+
+        logger.info(f"Found {len(taxes)} taxes in Odoo")
+
+        for tax in taxes:
+            try:
+                from app.services.woocommerce.taxes import sync_tax_to_woocommerce as sync_tax_func
+
+                result = sync_tax_to_woocommerce(
+                    tax_data=tax,
+                    db=self.db,
+                    wcapi=wcapi,
+                    instance_id=instance_id,
+                    odoo_config=odoo_config,
+                    create_if_not_exists=True,
+                    update_existing=True
+                )
+
+                if result and result.get("success"):
+                    if result.get("action") == "created":
+                        total_created += 1
+                    elif result.get("action") == "updated":
+                        total_updated += 1
+                    total_processed += 1
+                else:
+                    total_errors += 1
+                    total_processed += 1
+
+            except Exception as e:
+                logger.error(f"Error processing tax {tax.get('id')}: {e}")
+                total_errors += 1
+                total_processed += 1
+
+        logger.info(
+            f"Full tax sync completed: {total_processed} processed, "
+            f"{total_created} created, {total_updated} updated, {total_errors} errors"
+        )
+
+        return {
+            "success": True,
+            "total_processed": total_processed,
+            "created": total_created,
+            "updated": total_updated,
+            "errors": total_errors,
+            "status": "completed"
+        }
+
+    except Exception as exc:
+        logger.error(f"Error in full tax sync: {exc}", exc_info=True)
+        return {
+            "success": False,
+            "total_processed": total_processed,
+            "created": total_created,
+            "updated": total_updated,
+            "errors": total_errors + 1,
+            "status": "error",
+            "error": str(exc)
+        }

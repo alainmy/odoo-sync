@@ -58,6 +58,8 @@ class OdooProduct(BaseModel):
 
     public_categ_ids: Optional[List[Dict[str, Any]]] = Field(default_factory=list, description="Publics categroies")
     
+    taxes_id: Optional[List[int]] = Field(default_factory=list, description="Impuestos asociados al producto")
+    
     @field_validator('active', 'sale_ok', 'purchase_ok', mode='before')
     @classmethod
     def convert_none_to_true(cls, v):

@@ -13,7 +13,8 @@ from app.repositories import (
     CategorySyncRepository, 
     TagSyncRepository,
     WebhookRepository,
-    TaskLogRepository
+    TaskLogRepository,
+    TaxSyncRepository
 )
 from app.auth.oauth2 import get_current_user
 from app.models.admin import Admin, WebhookLog
@@ -106,6 +107,30 @@ class TagSyncResponse(BaseModel):
     error: bool
     message: str
     error_details: Optional[str]
+    
+    class Config:
+        from_attributes = True
+
+
+class TaxSyncResponse(BaseModel):
+    """Respuesta de sincronización de tax"""
+    id: int
+    odoo_id: int
+    odoo_name: Optional[str]
+    odoo_description: Optional[str]
+    woocommerce_id: int
+    rate: Optional[float]
+    amount: Optional[float]
+    price_include: bool
+    tax_scope: Optional[str]
+    type_tax_use: Optional[str]
+    created: bool
+    updated: bool
+    skipped: bool
+    error: bool
+    message: str
+    error_details: Optional[str]
+    last_synced_at: Optional[datetime]
     
     class Config:
         from_attributes = True
@@ -406,6 +431,51 @@ async def get_tag_sync_by_odoo_id(
     
     if not sync:
         raise HTTPException(status_code=404, detail=f"Tag sync con odoo_id={odoo_id} no encontrado")
+    
+    return sync
+
+
+@router.get("/taxes", response_model=List[TaxSyncResponse])
+async def get_tax_syncs(
+    has_error: Optional[bool] = Query(None, description="Filtrar por taxes con error"),
+    limit: int = Query(100, le=1000, description="Límite de resultados"),
+    skip: int = Query(0, description="Offset para paginación"),
+    db: Session = Depends(get_db),
+    current_user: Admin = Depends(get_current_user)
+):
+    """
+    Obtener registros de sincronización de taxes.
+    
+    Permite filtrar por taxes con errores.
+    """
+    instance_id = get_active_instance_id(db, current_user)
+    sync_repo = TaxSyncRepository(db)
+    
+    syncs = sync_repo.get_all_by_instance(
+        instance_id=instance_id,
+        error=has_error,
+        limit=limit,
+        offset=skip
+    )
+    
+    return syncs
+
+
+@router.get("/taxes/odoo/{odoo_id}", response_model=TaxSyncResponse)
+async def get_tax_sync_by_odoo_id(
+    odoo_id: int,
+    db: Session = Depends(get_db),
+    current_user: Admin = Depends(get_current_user)
+):
+    """
+    Obtener registro de sincronización de tax por su ID de Odoo.
+    """
+    instance_id = get_active_instance_id(db, current_user)
+    sync_repo = TaxSyncRepository(db)
+    sync = sync_repo.get_by_odoo_id_and_instance(odoo_id, instance_id)
+    
+    if not sync:
+        raise HTTPException(status_code=404, detail=f"Tax sync con odoo_id={odoo_id} no encontrado")
     
     return sync
 
