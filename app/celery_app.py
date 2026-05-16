@@ -58,6 +58,14 @@ celery_app.conf.update(
             'queue': 'sync_queue',
             'priority': 5
         },
+        'app.tasks.sync_tasks.sync_tax_to_woocommerce': {
+            'queue': 'sync_queue',
+            'priority': 6
+        },
+        'app.tasks.sync_tasks.full_tax_sync_odoo_to_woocommerce': {
+            'queue': 'sync_queue',
+            'priority': 7
+        },
         'app.tasks.sync_tasks.full_product_sync_wc_to_odoo': {
             'queue': 'sync_queue',
             'priority': 3
