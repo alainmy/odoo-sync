@@ -523,7 +523,7 @@ def sync_product_to_odoo(self,
                 f"Found sync record for WooCommerce product ID {woo_id}, Odoo ID {prododuct_sync.odoo_id}")
 
             existing_products = client.search_read_sync(
-                model="product.product",
+                model="product.template",
                 domain=[("id", "=", prododuct_sync.odoo_id)],
                 fields=["id", "name"]
             )
@@ -531,11 +531,11 @@ def sync_product_to_odoo(self,
             # Update existing product
             product_id = existing_products[0]["id"]
             client.write(
-                model="product.product", vals=odoo_product_data, record_id=product_id)
+                model="product.template", vals=odoo_product_data, record_id=product_id)
             action = "updated"
         else:
             # Create new product
-            product_id = client.create("product.product", odoo_product_data)
+            product_id = client.create(model="product.template", vals=odoo_product_data)
             action = "created"
 
         logger.info(f"Product {action}: Odoo ID {product_id}")
