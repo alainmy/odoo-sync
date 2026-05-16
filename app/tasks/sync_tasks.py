@@ -490,7 +490,6 @@ def sync_product_to_odoo(self,
             instance.odoo_username,
             instance.odoo_password
         )
-        uuid = client.odoo_authenticate()
         # Map WooCommerce product to Odoo format
         odoo_product_data = {
             "name": product_data.get("name"),
