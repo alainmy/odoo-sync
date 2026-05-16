@@ -522,7 +522,7 @@ def sync_product_to_odoo(self,
             logger.info(
                 f"Found sync record for WooCommerce product ID {woo_id}, Odoo ID {prododuct_sync.odoo_id}")
 
-            existing_products = client.search_read(
+            existing_products = client.search_read_sync(
                 uid=uuid,
                 model="product.product",
                 domain=[("id", "=", prododuct_sync.odoo_id)],
