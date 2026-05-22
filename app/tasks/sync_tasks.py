@@ -534,7 +534,8 @@ def sync_product_to_odoo(self,
             action = "updated"
         else:
             # Create new product
-            product_id = client.create(model="product.template", vals=odoo_product_data)
+            product_id = client.create(
+                model="product.template", vals=odoo_product_data)
             action = "created"
 
         logger.info(f"Product {action}: Odoo ID {product_id}")
@@ -1534,6 +1535,31 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                         vals=sale_order_data,
                         record_id=order_id
                     )
+                    # Create a regular invoice for the order
+                    invoice, order_data = order_client.create_invoice(
+                        order_id=order_id)
+                    if invoice and order_data:
+                        # create invoice payment
+                        invoice_payment = order_client.create_invoice_payment(
+                            invoice_id=invoice,
+                            order=order_data)
+                        if not invoice_payment:
+                            logger.error("No payment found in Odoo")
+                            message = f"The payment for the invoice {invoice} could not be created"
+                            order_client.message_post(
+                                model='sale.order',
+                                record_id=order_id,
+                                body=message
+                            )
+                    else:
+                        logger.error(
+                            f"No invoice found in Odoo for order {order_id}")
+                        message = f"The invoice for the order {order_id} could not be created"
+                        order_client.message_post(
+                            model='sale.order',
+                            record_id=order_id,
+                            body=message
+                        )
                     logger.info(
                         f"Updated existing order in draft state: {order_id}")
                     action = "updated"
@@ -1634,6 +1660,34 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                 )
             logger.info(
                 f"Created new sale order in Odoo with ID {order_id}")
+            # if confirm order in Odoo if status is processing or completed create a invoice
+            if sale_order_data["state"] == "completed" or sale_order_data["state"] == "processing":
+
+                # Create a regular invoice for the order
+                invoice, order_data = order_client.create_invoice(
+                    order_id=order_id)
+                if invoice and order_data:
+                    # create invoice payment
+                    invoice_payment = order_client.create_invoice_payment(
+                        invoice_id=invoice,
+                        order=order_data)
+                    if not invoice_payment:
+                        logger.error("No payment found in Odoo")
+                        message = f"The payment for the invoice {invoice} could not be created"
+                        order_client.message_post(
+                            model='sale.order',
+                            record_id=order_id,
+                            body=message
+                        )
+                else:
+                    logger.error(
+                        f"No invoice found in Odoo for order {order_id}")
+                    message = f"The invoice for the order {order_id} could not be created"
+                    order_client.message_post(
+                        model='sale.order',
+                        record_id=order_id,
+                        body=message
+                    )
             action = "created"
 
         logger.info(f"Order {action}: Odoo ID {order_id}")

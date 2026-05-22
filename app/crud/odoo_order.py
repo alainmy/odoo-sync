@@ -1,5 +1,6 @@
 
 
+import datetime
 import json
 import os
 import dotenv
@@ -70,8 +71,10 @@ class OrderClient(OdooClient):
             logger.error(f"Error in message_post: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
 
-    def cal_method(self, model, metod, params=None):
+    def cal_method(self, model, metod, params=None, context=None):
         """Llama a un método específico en Odoo."""
+        if context:
+            self.context.update(context)
         payload = {
             "jsonrpc": "2.0",
             "method": "call",
@@ -136,3 +139,126 @@ class OrderClient(OdooClient):
         except Exception as e:
             logger.error(f"Error in search_count: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
+
+    # create invoice
+    async def create_invoice(self, order_id):
+        
+        order = await self.search_read(
+            self.uid,
+            "sale.order",
+            domain=[["id", "=", order_id]],
+            fields=["id", "name",
+                    "partner_id",
+                    "amount_total",
+                    "order_line",
+                    "reference",
+                    "payment_term_id",
+                    "fiscal_position_id"
+                    ],
+            limit=1,
+            offset=0
+        )
+        order = order["result"][0]
+        
+        wizzard_id = self.create(
+            model="sale.advance.payment.inv",
+            vals={},
+            context={
+                'active_ids': [order_id],
+                'active_model': 'sale.order',
+                'active_id': order_id,
+            }
+
+        )
+        if not wizzard_id or "result" not in wizzard_id:
+            logger.error(f"Error creando wizzard de factura: {wizzard_id}")
+            raise HTTPException(
+                status_code=400, detail="Error creando wizzard de factura en Odoo")
+
+        create_invoice = self.cal_method(
+            "sale.advance.payment.inv",
+            "create_invoices",
+            params=[
+                wizzard_id["result"]],
+            context={
+                'active_ids': [order_id],
+                'active_model': 'sale.order',
+                'active_id': order_id,
+            }
+        )
+
+        sale_ivoices_ids = self.search_read_sync(
+            model="sale.order",
+            domain=[
+                ('id', '=', order_id)
+            ],
+            fields=['id', 'name', 'state', 'invoice_ids',],
+            limit=1
+        )
+        if not sale_ivoices_ids["result"]:
+            logger.error(f"No se encontró factura en Odoo")
+            raise HTTPException(
+                status_code=400, detail="No se encontró factura en Odoo")
+        invoice_id = sale_ivoices_ids["result"][0]['invoice_ids'][0]
+        confirm_invoice = self.cal_method(
+            'account.move',
+            'action_post',
+            params=[[invoice_id]]
+        )
+        return invoice_id, order
+    
+    def create_invoice_payment(self, invoice_id, order):
+        
+        payment_method_line_id= self.search_read_sync(
+            model="account.payment.method.line",
+            domain=[["code", "=", "manual"]],
+            fields=["id", "name","journal_id"],
+            limit=1
+        )
+        if not payment_method_line_id:
+            logger.error("No payment method found in Odoo")
+            raise HTTPException(status_code=400, detail="No se encontró método de pago manual en Odoo")
+        
+        payment_wizard_id = self.create(
+            model="account.payment.register",
+            vals={
+               "journal_id": payment_method_line_id[0].get("journal_id")[0],
+                "partner_type": "customer",
+                "payment_method_line_id": payment_method_line_id[0].get("id"),
+                "amount": order.get("amount_total", 0),
+                "communication": f"WC-{order['name']}",
+                "payment_date": datetime.datetime.now().strftime("%Y-%m-%d"),
+            },
+            context={
+                'active_model': 'account.move',
+                'active_ids': [invoice_id],
+                'active_id': invoice_id,
+            }
+        )
+        if not payment_wizard_id or "result" not in payment_wizard_id:
+            logger.error(f"Error creando wizzard de pago: {payment_wizard_id}")
+            raise HTTPException(status_code=400, detail="Error creando wizzard de pago en Odoo")
+        
+        register_payment = self.cal_method(
+            "account.payment.register",
+            "action_create_payments",
+            params=[payment_wizard_id["result"]],
+            context={
+                'active_model': 'account.move',
+                'active_ids': [invoice_id],
+                'active_id': invoice_id,
+            }
+        )
+        # get invoice payment
+        invoice_payments = self.search_read_sync(
+            model="account.move",
+            domain=[["id", "=", invoice_id]],
+            fields=["id", "name", "state","reconciled_payment_ids"],
+            limit=1
+        )
+        if invoice_payments["result"]:
+            if not invoice_payments["result"][0].get("reconciled_payment_ids"):
+                logger.error(f"No se encontró factura en Odoo")
+                raise HTTPException(status_code=400, detail="No se encontró factura en Odoo")
+            return invoice_payments["result"][0]["reconciled_payment_ids"][0]
+            

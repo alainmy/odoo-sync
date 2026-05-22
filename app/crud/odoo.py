@@ -165,10 +165,17 @@ class OdooClient:
         }
         response = requests.post(f"{self.url}/jsonrpc", json=payload)
         result = response.json()
+        if result.get("error"):
+            logger.error(f"Odoo search_read error: {result['error']}")
+            raise HTTPException(status_code=500,
+                                detail=str(result["error"]))
+        logger.info(f"Odoo search_read response: {result}") 
         return result.get("result", [])
 
-    def create(self, uid=None, model=None, vals=None):
+    def create(self, uid=None, model=None, vals=None, context= None):
         """Crea un registro en Odoo para el modelo y valores dados."""
+        if context:
+            self.context.update(context)
         payload = {
             "jsonrpc": "2.0",
             "method": "call",
@@ -227,8 +234,10 @@ class OdooClient:
             logger.error(f"Error in write: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
 
-    def cal_method(self, model, metod, params=None):
+    def cal_method(self, model, metod, params=None, context=None):
         """Llama a un método específico en Odoo."""
+        if context:
+            self.context.update(context)
         payload = {
             "jsonrpc": "2.0",
             "method": "call",

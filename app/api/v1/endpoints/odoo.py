@@ -3,7 +3,6 @@ from datetime import datetime, date
 from itertools import product
 import time
 
-from celery import result
 from app.session import create_session, get_session
 from app.schemas.products import OdooProductSchema, ProductBase, ProductPriceListItem
 from app.schemas.categories import CategoryBase, CategorySyncRequest, CategorySyncResponse
@@ -779,3 +778,369 @@ async def save_invoice(
         raise HTTPException(status_code=500, detail=str(e))
 
     return {"odoo_invoice_id": invoice["result"]}
+
+
+# @router.post("/test-invoice-and-payment/", summary="Crear, confirmar y pagar una factura de prueba", tags=["invoice-test"])
+# async def test_invoice_and_payment(
+#     request: Request,
+#     order_reference: str = Query(..., description="Referencia de la orden"),
+#     odoo: OdooClient = Depends(get_session_id),
+# ):
+#     """
+#     Endpoint de prueba para:
+#     1. Crear una factura en Odoo (account.move)
+#     2. Confirmar la factura
+#     3. Crear y registrar un pago asociado
+#     """
+#     try:
+#         uid = await odoo.odoo_authenticate()
+#         if not uid:
+#             raise HTTPException(status_code=401, detail="No se pudo autenticar con Odoo")
+
+#         _logger.info(f"=== INICIANDO PRUEBA DE FACTURA Y PAGO ===")
+#         _logger.info(f"Order Reference: {order_reference}")
+#         order = await odoo.search_read(
+#             uid,
+#             "sale.order",
+#             domain=[["id", "=", int(order_reference)]],
+#             fields=["id", "name",
+#                     "partner_id",
+#                     "amount_total",
+#                     "order_line",
+#                     "reference",
+#                     "payment_term_id",
+#                     "fiscal_position_id"
+#                     ],
+#             limit=1,
+#             offset=0
+#         )
+#         if not order.get("result"):
+#             _logger.error(f"No se encontró orden con referencia {order_reference}")
+#             raise HTTPException(status_code=400, detail="No se encontró orden con referencia")
+#         order = order["result"][0]
+#         partner_id = order.get("partner_id")
+#         lines = order.get("order_line", [])
+#         if lines:
+#             lines = odoo.search_read_sync(
+#                 model="sale.order.line",
+#                 domain=[["id", "in", lines]],
+#                 fields=["id", "name", "product_id", "price_unit", "product_uom_qty"],
+#                 limit=100,
+#                 offset=0
+#             )
+#             if not lines:
+#                 _logger.error(f"No se encontraron líneas de orden con ID {order.get('id')}")
+#                 raise HTTPException(status_code=400, detail="No se encontraron líneas de orden")
+#             lines = [(0, 0, {
+#                 "quantity": line.get("product_uom_qty", 1),
+#                 "price_unit": line.get("price_unit", 0),
+#                 "product_id": line.get("product_id")[0],
+#                 "sale_line_ids": [(6, 0, [line.get("id")])]
+#             }) for line in lines]
+#         else:
+#             lines = []
+#         # 1. Crear factura en Odoo
+#         invoice_data = {
+#             "partner_id": partner_id[0],
+#             "fiscal_position_id": order.get("fiscal_position_id", False)[0] if order.get("fiscal_position_id", False) else False,
+#             "invoice_origin": order.get("name"),
+#             "invoice_payment_term_id": order.get("payment_term_id", False)[0] if order.get("payment_term_id", False) else False,
+#             "payment_reference": order.get("reference", False),
+#             "move_type": "out_invoice",
+#             "invoice_date": datetime.now().strftime("%Y-%m-%d"),
+#             "date": datetime.now().strftime("%Y-%m-%d"),
+#             "invoice_line_ids": lines,
+#         }
+
+#         invoice_response = odoo.create(
+#             model="account.move",
+#             vals=invoice_data
+#         )
+
+#         if not invoice_response or "result" not in invoice_response:
+#             _logger.error(f"Error creando factura: {invoice_response}")
+#             raise HTTPException(status_code=400, detail="Error creando factura en Odoo")
+
+#         invoice_id = invoice_response["result"]
+#         _logger.info(f"Factura creada en Odoo con ID: {invoice_id}")
+#         invoice_linies = odoo.search_read_sync(
+#             model="account.move.line",
+#             domain=[["move_id", "=", invoice_id]],
+#             fields=["id",
+#                     "account_id"],
+#             limit=1,
+#             offset=0
+#         )
+#         if not invoice_linies:
+#             _logger.error(f"No se encontró factura con ID {invoice_id}")
+#             raise HTTPException(status_code=400, detail="No se encontró factura en Odoo")
+#         invoice_object_line = invoice_linies[0]
+#         # 2. Confirmar la factura (action_post en Odoo 17+)
+#         confirm_response = odoo.cal_method(
+#             'account.move',
+#             'action_post',
+#             params=[[invoice_id]]
+#         )
+#         _logger.info(f"Factura confirmada: {confirm_response}")
+
+#         # 3. Buscar método de pago manual
+#         payment_method_line_id= odoo.search_read_sync(
+#             model="account.payment.method.line",
+#             domain=[["code", "=", "manual"]],
+#             fields=["id", "name","journal_id"],
+#             limit=1
+#         )
+
+#         if not payment_method_line_id:
+#             _logger.error("No payment method found in Odoo")
+#             raise HTTPException(status_code=400, detail="No se encontró método de pago manual en Odoo")
+
+#         _logger.info(f"Método de pago encontrado: {payment_method_line_id[0].get('id')}")
+
+#         # 4. Buscar diario de ventas
+#         journal = odoo.search_read_sync(
+#             model="account.journal",
+#             domain=[["type", "=", "bank"]],
+#             fields=["id", "name"],
+#             limit=1
+#         )
+
+#         if not journal:
+#             _logger.error("No journal found in Odoo")
+#             raise HTTPException(status_code=400, detail="No se encontró diario de ventas en Odoo")
+
+#         _logger.info(f"Diario encontrado: {journal}")
+
+#         # 5. Crear pago en Odoo
+#         payment_data = {
+#             "journal_id": payment_method_line_id[0].get("journal_id")[0],
+#             "payment_type": "inbound",
+#             "partner_type": "customer",
+#             "payment_method_line_id": payment_method_line_id[0].get("id"),
+#             "amount": order.get("amount_total", 0),
+#             "partner_id": partner_id[0],
+#             "move_id": invoice_id,
+#             "memo": f"WC-TEST-{invoice_id}",
+#             'destination_account_id': invoice_object_line.get("account_id")[0],
+#             "date": datetime.now().strftime("%Y-%m-%d"),
+#         }
+
+#         payment_response = odoo.create(
+#             model="account.payment",
+#             vals=payment_data
+#         )
+
+#         if not payment_response or "result" not in payment_response:
+#             _logger.error(f"Error creando pago: {payment_response}")
+#             raise HTTPException(status_code=400, detail="Error creando pago en Odoo")
+
+#         payment_id = payment_response["result"]
+#         _logger.info(f"Pago creado en Odoo con ID: {payment_id}")
+
+#         # 6. Confirmar el pago (action_post)
+#         payment_post_response = odoo.cal_method(
+#             'account.payment',
+#             'action_post',
+#             params=[[payment_id]]
+#         )
+#         payment_post_response = odoo.write(
+#             'account.payment',
+#             {"state": "paid"},
+#             payment_id,
+
+#         )
+#         invoice_updated = odoo.write(
+#             'account.move',
+#             {
+#                 "payment_state": "paid",
+#                 "matched_payment_ids": [(6, 0, [payment_id])],
+#                 },
+#             invoice_id,
+
+#         )
+#         _logger.info(f"Pago confirmado: {payment_post_response}")
+
+#         _logger.info("=== PRUEBA COMPLETADA EXITOSAMENTE ===")
+#         payment = odoo.search_read_sync(
+#             model="account.payment",
+#             domain=[["id", "=", payment_id]],
+#             fields=["id", "name", "state"],
+#             limit=1
+#         )
+#         invoice = odoo.search_read_sync(
+#             model="account.move",
+#             domain=[["id", "=", invoice_id]],
+#             fields=["id", "name", "state","payment_state"],
+#             limit=1
+#         )
+#         return {
+#             "status": "success",
+#             "message": "Factura creada, confirmada y pagada exitosamente",
+#             "invoice_id": invoice_id,
+#             "payment_id": payment_id
+#         }
+
+#     except HTTPException as e:
+#         raise e
+#     except Exception as e:
+#         _logger.error(f"Error inesperado en prueba de factura: {e}")
+#         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/test-invoice-and-payment/", summary="Crear, confirmar y pagar una factura de prueba", tags=["invoice-test"])
+async def test_invoice_and_payment(
+    request: Request,
+    order_reference: str = Query(..., description="Referencia de la orden"),
+    odoo: OdooClient = Depends(get_session_id),
+):
+    """
+    Endpoint de prueba para:
+    1. Crear una factura en Odoo (account.move)
+    2. Confirmar la factura
+    3. Crear y registrar un pago asociado
+    """
+    try:
+        uid = await odoo.odoo_authenticate()
+        if not uid:
+            raise HTTPException(
+                status_code=401, detail="No se pudo autenticar con Odoo")
+
+        _logger.info(f"=== INICIANDO PRUEBA DE FACTURA Y PAGO ===")
+        _logger.info(f"Order Reference: {order_reference}")
+        order = await odoo.search_read(
+            uid,
+            "sale.order",
+            domain=[["id", "=", int(order_reference)]],
+            fields=["id", "name",
+                    "partner_id",
+                    "amount_total",
+                    "order_line",
+                    "reference",
+                    "payment_term_id",
+                    "fiscal_position_id"
+                    ],
+            limit=1,
+            offset=0
+        )
+        if not order.get("result"):
+            _logger.error(
+                f"No se encontró orden con referencia {order_reference}")
+            raise HTTPException(
+                status_code=400, detail="No se encontró orden con referencia")
+        order = order["result"][0]
+        order_id = order.get("id")
+
+        wizzard_id = odoo.create(
+            model="sale.advance.payment.inv",
+            vals={},
+            context={
+                'active_ids': [order_id],
+                'active_model': 'sale.order',
+                'active_id': order_id,
+            }
+
+        )
+        if not wizzard_id or "result" not in wizzard_id:
+            _logger.error(f"Error creando wizzard de factura: {wizzard_id}")
+            raise HTTPException(
+                status_code=400, detail="Error creando wizzard de factura en Odoo")
+
+        create_invoice = odoo.cal_method(
+            "sale.advance.payment.inv",
+            "create_invoices",
+            params=[
+                wizzard_id["result"]],
+            context={
+                'active_ids': [order_id],
+                'active_model': 'sale.order',
+                'active_id': order_id,
+            }
+        )
+
+        ivoices_ids = odoo.search_read_sync(
+            model="sale.order",
+            domain=[
+                ('id', '=', order_id)
+            ],
+            fields=['id', 'name', 'state', 'invoice_ids',],
+            limit=1
+        )
+        if not ivoices_ids:
+            _logger.error(f"No se encontró factura en Odoo")
+            raise HTTPException(
+                status_code=400, detail="No se encontró factura en Odoo")
+        ivoices = ivoices_ids[0]['invoice_ids']
+        invoice_id = ivoices[0] if ivoices else None
+        if not invoice_id:
+            _logger.error(f"No se encontró factura en Odoo")
+            raise HTTPException(
+                status_code=400, detail="No se encontró factura en Odoo")
+        confirm_invoice = odoo.cal_method(
+            'account.move',
+            'action_post',
+            params=[[invoice_id]]
+        )
+        
+        # create wizard payment
+        payment_method_line_id= odoo.search_read_sync(
+            model="account.payment.method.line",
+            domain=[["code", "=", "manual"]],
+            fields=["id", "name","journal_id"],
+            limit=1
+        )
+        if not payment_method_line_id:
+            _logger.error("No payment method found in Odoo")
+            raise HTTPException(status_code=400, detail="No se encontró método de pago manual en Odoo")
+        
+        payment_wizard_id = odoo.create(
+            model="account.payment.register",
+            vals={
+               "journal_id": payment_method_line_id[0].get("journal_id")[0],
+                "partner_type": "customer",
+                "payment_method_line_id": payment_method_line_id[0].get("id"),
+                "amount": order.get("amount_total", 0),
+                "communication": f"WC-{order['name']}",
+                "payment_date": datetime.now().strftime("%Y-%m-%d"),
+            },
+            context={
+                'active_model': 'account.move',
+                'active_ids': [invoice_id],
+                'active_id': invoice_id,
+            }
+        )
+        if not payment_wizard_id or "result" not in payment_wizard_id:
+            _logger.error(f"Error creando wizzard de pago: {payment_wizard_id}")
+            raise HTTPException(status_code=400, detail="Error creando wizzard de pago en Odoo")
+        register_payment = odoo.cal_method(
+            "account.payment.register",
+            "action_create_payments",
+            params=[payment_wizard_id["result"]],
+            context={
+                'active_model': 'account.move',
+                'active_ids': [invoice_id],
+                'active_id': invoice_id,
+            }
+        )
+        # get invoice payment
+        invoice_payments = odoo.search_read_sync(
+            model="account.move",
+            domain=[["id", "=", invoice_id]],
+            fields=["id", "name", "state","reconciled_payment_ids"],
+            limit=1
+        )
+        if not invoice_payments["result"]:
+            _logger.error(f"No se encontró factura en Odoo")
+            raise HTTPException(status_code=400, detail="No se encontró factura en Odoo")
+        
+
+        return {
+            "status": "success",
+            "message": "Factura creada, confirmada y pagada exitosamente",
+            "invoice_id": invoice_id,
+            # "payment_id": payment_id
+        }
+
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        _logger.error(f"Error inesperado en prueba de factura: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
