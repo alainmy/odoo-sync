@@ -1485,7 +1485,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                     order_lines.append((0, 0, {
                         "product_id": delivery["id"],
                         "product_uom_qty": 1,
-                        "price_unit": shipping_line["price"],
+                        "price_unit": shipping_line["total"],
                         "name": f"WC - Delivery - {shipping_line['method_title']}",
                     }))
         # Validate that we have at least one order line
@@ -1536,13 +1536,13 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                         record_id=order_id
                     )
                     # Create a regular invoice for the order
-                    invoice, order_data = order_client.create_invoice(
+                    invoice, order_d = order_client.create_invoice(
                         order_id=order_id)
-                    if invoice and order_data:
+                    if invoice and order_d:
                         # create invoice payment
                         invoice_payment = order_client.create_invoice_payment(
                             invoice_id=invoice,
-                            order=order_data)
+                            order=order_d)
                         if not invoice_payment:
                             logger.error("No payment found in Odoo")
                             message = f"The payment for the invoice {invoice} could not be created"
@@ -1664,13 +1664,13 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             if sale_order_data["state"] == "completed" or sale_order_data["state"] == "processing":
 
                 # Create a regular invoice for the order
-                invoice, order_data = order_client.create_invoice(
+                invoice, order_d = order_client.create_invoice(
                     order_id=order_id)
-                if invoice and order_data:
+                if invoice and order_d:
                     # create invoice payment
                     invoice_payment = order_client.create_invoice_payment(
                         invoice_id=invoice,
-                        order=order_data)
+                        order=order_d)
                     if not invoice_payment:
                         logger.error("No payment found in Odoo")
                         message = f"The payment for the invoice {invoice} could not be created"
