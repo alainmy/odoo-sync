@@ -1404,7 +1404,7 @@ async def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int)
             instance.odoo_username,
             instance.odoo_password
         )
-        if existing_orders:
+        if existing_orders and existing_orders[0]['state'] == 'draft':
             order_client.write(
                 model='sale.order',
                 vals={
@@ -1413,83 +1413,84 @@ async def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int)
                 record_id=existing_orders[0]["id"]
             )
             action = "updated"
-        for line in order_data.get("line_items", []):
-            product_id = None
-            # get taxes
-            taxes_ids = []
-            if line.get("taxes"):
-                taxes_ids = [t.get("id") for t in line.get("taxes")]
-            logger.info(f"Taxes ids: {taxes_ids}")
-            taxes_sync = self.db.query(TaxSync).filter(
-                TaxSync.woocommerce_id.in_(taxes_ids),
-                TaxSync.instance_id == instance_id
-            ).all()
-            logger.info(f"Taxes sync: {taxes_sync}")
-            odoo_taxes_ids = [
-                t.odoo_id for t in taxes_sync] if taxes_sync else []
-            logger.info(f"Odoo taxes ids: {odoo_taxes_ids}")
-            # Try to find product by sync record first
-            product_sync = None
-            if line.get("product_id") and line.get("variation_id") != 0:
-                product_sync = self.db.query(ProductVariantSync).filter(
-                    ProductVariantSync.woocommerce_id == line.get(
-                        "variation_id"),
-                    ProductVariantSync.instance_id == instance_id
-                ).first()
-                logger.info(
-                    f"Found variant sync record: {product_sync.odoo_id if product_sync else 'None'} for variation_id {line.get('variation_id')}")
-            else:
-                product_sync = self.db.query(ProductSync).filter(
-                    ProductSync.woocommerce_id == line.get("product_id"),
-                    ProductSync.instance_id == instance_id
-                ).first()
-                logger.info(
-                    f"Searching for product sync record for product_id {line.get('product_id')}: {product_sync.odoo_id if product_sync else 'None'}")
-            if product_sync:
-                products = client.search_read_sync(
-                    "product.product" if line.get(
-                        "variation_id") != 0 else "product.template",
-                    domain=[("id", "=", product_sync.odoo_id)],
-                    fields=["id", "product_variant_id"]
-                )
-                logger.info(
-                    f"Found product in Odoo for sync record {product_sync.odoo_id}: {products}")
-                if products:
-                    product_id = products[0]["product_variant_id"][0] if line.get(
-                        "variation_id") == 0 else products[0]["id"]
+        if not existing_orders or existing_orders[0]['state'] == 'sent':
+            for line in order_data.get("line_items", []):
+                product_id = None
+                # get taxes
+                taxes_ids = []
+                if line.get("taxes"):
+                    taxes_ids = [t.get("id") for t in line.get("taxes")]
+                logger.info(f"Taxes ids: {taxes_ids}")
+                taxes_sync = self.db.query(TaxSync).filter(
+                    TaxSync.woocommerce_id.in_(taxes_ids),
+                    TaxSync.instance_id == instance_id
+                ).all()
+                logger.info(f"Taxes sync: {taxes_sync}")
+                odoo_taxes_ids = [
+                    t.odoo_id for t in taxes_sync] if taxes_sync else []
+                logger.info(f"Odoo taxes ids: {odoo_taxes_ids}")
+                # Try to find product by sync record first
+                product_sync = None
+                if line.get("product_id") and line.get("variation_id") != 0:
+                    product_sync = self.db.query(ProductVariantSync).filter(
+                        ProductVariantSync.woocommerce_id == line.get(
+                            "variation_id"),
+                        ProductVariantSync.instance_id == instance_id
+                    ).first()
+                    logger.info(
+                        f"Found variant sync record: {product_sync.odoo_id if product_sync else 'None'} for variation_id {line.get('variation_id')}")
+                else:
+                    product_sync = self.db.query(ProductSync).filter(
+                        ProductSync.woocommerce_id == line.get("product_id"),
+                        ProductSync.instance_id == instance_id
+                    ).first()
+                    logger.info(
+                        f"Searching for product sync record for product_id {line.get('product_id')}: {product_sync.odoo_id if product_sync else 'None'}")
+                if product_sync:
+                    products = client.search_read_sync(
+                        "product.product" if line.get(
+                            "variation_id") != 0 else "product.template",
+                        domain=[("id", "=", product_sync.odoo_id)],
+                        fields=["id", "product_variant_id"]
+                    )
+                    logger.info(
+                        f"Found product in Odoo for sync record {product_sync.odoo_id}: {products}")
+                    if products:
+                        product_id = products[0]["product_variant_id"][0] if line.get(
+                            "variation_id") == 0 else products[0]["id"]
 
-            # Fallback: search by SKU
-            if not product_id:
-                return {"success": False, "error": f"Product with id {line['product_id']} not synced"}
+                # Fallback: search by SKU
+                if not product_id:
+                    return {"success": False, "error": f"Product with id {line['product_id']} not synced"}
 
-            if product_id:
-                order_lines.append((0, 0, {
-                    "product_id": product_id,
-                    "product_uom_qty": int(line.get("quantity", 1)),
-                    "price_unit": float(line.get("price", 0)),
-                    "name": line.get("name", "Product"),
-                    "tax_id": odoo_taxes_ids
-                }))
-        # Buscar  producto de de delivery in odoo
-        delivery = client.search_read_sync(
-            "product.product",
-            domain=[("default_code", "=", "Delivery_007")],
-            fields=["id", "name"],
-            limit=1
-        )
-        if delivery:
-            delivery = delivery[0]
-            shipping_lines = order_data["shipping_lines"]
-            if shipping_lines:
-                for shipping_line in shipping_lines:
+                if product_id:
                     order_lines.append((0, 0, {
-                        "product_id": delivery["id"],
-                        "product_uom_qty": 1,
-                        "price_unit": shipping_line["total"],
-                        "name": f"WC - Delivery - {shipping_line['method_title']}",
+                        "product_id": product_id,
+                        "product_uom_qty": int(line.get("quantity", 1)),
+                        "price_unit": float(line.get("price", 0)),
+                        "name": line.get("name", "Product"),
+                        "tax_id": odoo_taxes_ids
                     }))
+            # Buscar  producto de de delivery in odoo
+            delivery = client.search_read_sync(
+                "product.product",
+                domain=[("default_code", "=", "Delivery_007")],
+                fields=["id", "name"],
+                limit=1
+            )
+            if delivery:
+                delivery = delivery[0]
+                shipping_lines = order_data["shipping_lines"]
+                if shipping_lines:
+                    for shipping_line in shipping_lines:
+                        order_lines.append((0, 0, {
+                            "product_id": delivery["id"],
+                            "product_uom_qty": 1,
+                            "price_unit": shipping_line["total"],
+                            "name": f"WC - Delivery - {shipping_line['method_title']}",
+                        }))
         # Validate that we have at least one order line
-        if not order_lines:
+        if not order_lines and not existing_orders: 
             logger.warning(
                 f"No valid order lines found for order {wc_order_id}")
             return {"success": False, "error": "No valid order lines found"}
@@ -1507,10 +1508,12 @@ async def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int)
             "partner_id": billing_odoo_partner_id,
             "partner_shipping_id": shipping_odoo_partner_id,
             "client_order_ref": f"WC-{wc_order_id}",
-            "order_line": order_lines,
             "note": order_data.get("customer_note", ""),
             "state": order_status[order_data["status"]]
         }
+        sale_order_data.update({
+            "order_line": order_lines
+        }) if order_lines else None
         logger.info(f"Prepared sale order data for Odoo: {sale_order_data}")
 
         if existing_orders:
