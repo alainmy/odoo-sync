@@ -157,7 +157,12 @@ class OrderClient(OdooClient):
             limit=1,
             offset=0
         )
-        order = order["result"][0]
+        logger.info(f"Order search result for invoice creation: {order}")
+        if not order:
+            logger.error(f"No se encontró la orden en Odoo para ID {order_id}")
+            raise HTTPException(
+                status_code=400, detail="No se encontró la orden en Odoo")
+        order = order[0]
         logger.info(f"Order data for invoice creation: {order}")
         wizzard_id = self.create(
             model="sale.advance.payment.inv",
