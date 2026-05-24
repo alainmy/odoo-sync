@@ -199,11 +199,11 @@ class OrderClient(OdooClient):
             fields=['id', 'name', 'state', 'invoice_ids',],
             limit=1
         )
-        if not sale_ivoices_ids["result"]:
+        if not sale_ivoices_ids:
             logger.error(f"No se encontró factura en Odoo")
             raise HTTPException(
                 status_code=400, detail="No se encontró factura en Odoo")
-        invoice_id = sale_ivoices_ids["result"][0]['invoice_ids'][0]
+        invoice_id = sale_ivoices_ids[0]['invoice_ids'][0]
         logger.info(f"Invoice ID for invoice creation: {invoice_id}")
         confirm_invoice = self.cal_method(
             'account.move',
@@ -263,9 +263,9 @@ class OrderClient(OdooClient):
             fields=["id", "name", "state","reconciled_payment_ids"],
             limit=1
         )
-        if invoice_payments["result"]:
-            if not invoice_payments["result"][0].get("reconciled_payment_ids"):
+        if invoice_payments:
+            if not invoice_payments[0].get("reconciled_payment_ids"):
                 logger.error(f"No se encontró factura en Odoo")
                 raise HTTPException(status_code=400, detail="No se encontró factura en Odoo")
-            return invoice_payments["result"][0]["reconciled_payment_ids"][0]
+            return invoice_payments[0]["reconciled_payment_ids"][0]
             
