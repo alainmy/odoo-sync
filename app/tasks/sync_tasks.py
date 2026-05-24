@@ -1182,7 +1182,7 @@ def full_order_sync_wc_to_odoo(
     max_retries=3,
     default_retry_delay=120
 )
-async def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Dict[str, Any]:
+def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Dict[str, Any]:
     """
     Sync a WooCommerce order to Odoo sale.order with proper partner/contact hierarchy.
 
@@ -1667,7 +1667,7 @@ async def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int)
             if sale_order_data["state"] == "completed" or sale_order_data["state"] == "processing":
 
                 # Create a regular invoice for the order
-                invoice, order_d = await order_client.create_invoice(
+                invoice, order_d = order_client.create_invoice(
                     order_id=order_id)
                 if invoice and order_d:
                     # create invoice payment

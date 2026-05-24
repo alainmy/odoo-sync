@@ -141,10 +141,9 @@ class OrderClient(OdooClient):
             raise HTTPException(status_code=500, detail=str(e))
 
     # create invoice
-    async def create_invoice(self, order_id):
+    def create_invoice(self, order_id):
         
-        order = await self.search_read(
-            self.uid,
+        order = self.search_read_sync(
             "sale.order",
             domain=[["id", "=", order_id]],
             fields=["id", "name",
