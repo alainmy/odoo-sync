@@ -1541,6 +1541,8 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                     # Create a regular invoice for the order
                     invoice, order_d = order_client.create_invoice(
                         order_id=order_id)
+                    logger.info(f"Invoice created: {invoice}")
+                    logger.info(f"Order data: {order_d}")
                     if invoice and order_d:
                         # create invoice payment
                         invoice_payment = order_client.create_invoice_payment(

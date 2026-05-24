@@ -158,7 +158,7 @@ class OrderClient(OdooClient):
             offset=0
         )
         order = order["result"][0]
-        
+        logger.info(f"Order data for invoice creation: {order}")
         wizzard_id = self.create(
             model="sale.advance.payment.inv",
             vals={},
@@ -173,7 +173,7 @@ class OrderClient(OdooClient):
             logger.error(f"Error creando wizzard de factura: {wizzard_id}")
             raise HTTPException(
                 status_code=400, detail="Error creando wizzard de factura en Odoo")
-
+        logger.info(f"Wizzard ID for invoice creation: {wizzard_id}")
         create_invoice = self.cal_method(
             "sale.advance.payment.inv",
             "create_invoices",
@@ -185,7 +185,7 @@ class OrderClient(OdooClient):
                 'active_id': order_id,
             }
         )
-
+        logger.info(f"Invoice creation result: {create_invoice}")
         sale_ivoices_ids = self.search_read_sync(
             model="sale.order",
             domain=[
@@ -199,6 +199,7 @@ class OrderClient(OdooClient):
             raise HTTPException(
                 status_code=400, detail="No se encontró factura en Odoo")
         invoice_id = sale_ivoices_ids["result"][0]['invoice_ids'][0]
+        logger.info(f"Invoice ID for invoice creation: {invoice_id}")
         confirm_invoice = self.cal_method(
             'account.move',
             'action_post',
@@ -217,7 +218,7 @@ class OrderClient(OdooClient):
         if not payment_method_line_id:
             logger.error("No payment method found in Odoo")
             raise HTTPException(status_code=400, detail="No se encontró método de pago manual en Odoo")
-        
+        logger.info(f"Payment method line for invoice payment: {payment_method_line_id}")
         payment_wizard_id = self.create(
             model="account.payment.register",
             vals={
@@ -234,6 +235,7 @@ class OrderClient(OdooClient):
                 'active_id': invoice_id,
             }
         )
+        logger.info(f"Payment wizard ID for invoice payment: {payment_wizard_id}")
         if not payment_wizard_id or "result" not in payment_wizard_id:
             logger.error(f"Error creando wizzard de pago: {payment_wizard_id}")
             raise HTTPException(status_code=400, detail="Error creando wizzard de pago en Odoo")
@@ -248,6 +250,7 @@ class OrderClient(OdooClient):
                 'active_id': invoice_id,
             }
         )
+        logger.info(f"Payment registration result: {register_payment}")
         # get invoice payment
         invoice_payments = self.search_read_sync(
             model="account.move",
