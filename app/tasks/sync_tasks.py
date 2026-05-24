@@ -1413,7 +1413,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                 record_id=existing_orders[0]["id"]
             )
             action = "updated"
-        if not existing_orders or existing_orders[0]['state'] == 'sent':
+        if not existing_orders or existing_orders[0]['state'] == 'draft':
             for line in order_data.get("line_items", []):
                 product_id = None
                 # get taxes
