@@ -43,6 +43,7 @@ app.mount(
 origins = [
     "http://localhost",
     "http://localhost:3000",
+    "http://localhost:3007",
     "https://alinea.cumbre.ar"
 ]
 

@@ -209,3 +209,79 @@ class TaxSyncStatisticsResponse(BaseModel):
     never_synced: int
     errors: int
     last_sync: Optional[datetime] = None
+
+
+class PaymentJournalSyncStatusResponse(BaseModel):
+    """Response with payment journal mapping and its sync status"""
+    id: int
+    odoo_journal_id: int
+    odoo_journal_name: str
+    odoo_journal_type: Optional[str] = None
+    odoo_journal_code: Optional[str] = None
+    woocommerce_payment_method_id: Optional[str] = None
+    woocommerce_payment_method_name: Optional[str] = None
+    sync_status: str
+    last_synced_at: Optional[datetime] = None
+    has_error: bool = False
+    error_message: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+class PaymentJournalCreate(BaseModel):
+    woocommerce_payment_method_id: str
+    woocommerce_payment_method_name: str
+    odoo_journal_id: int
+    odoo_journal_name: str
+    odoo_journal_type: str
+    odoo_journal_code: str
+
+class PaymentJournalListResponse(BaseModel):
+    
+    data:Optional[List[PaymentJournalSyncStatusResponse]] = []
+    total_count: int
+class PaymentGateway(BaseModel):
+    id: str
+    title: str
+    description: Optional[str] = None
+    enabled: bool
+    order: int
+    method_title: str
+    method_description: str
+    method_supports: List[str]
+
+class PaymentGatewayListResponse(BaseModel):
+    """Response with payment gateways"""
+    total_count: int
+    payment_gateways: Optional[List[PaymentGateway]] = []
+class OdooPaymentJournalListResponse(BaseModel):
+    """Response with Odoo payment journals and their sync status"""
+    total_count: int
+    payment_journals: List[PaymentJournalSyncStatusResponse]
+    filters_applied: dict
+
+
+class BatchPaymentJournalSyncRequest(BaseModel):
+    """Request to sync multiple payment journal mappings"""
+    odoo_ids: List[int] = Field(..., min_items=1, description="List of Odoo journal IDs to sync")
+    force_sync: bool = Field(default=False, description="Force sync even if already synced")
+    create_if_not_exists: bool = Field(default=True, description="Create in WooCommerce if doesn't exist")
+    update_existing: bool = Field(default=True, description="Update existing WooCommerce payment methods")
+
+
+class BatchPaymentJournalSyncResponse(BaseModel):
+    """Response for batch payment journal sync operation"""
+    task_id: Optional[str] = None
+    status: str
+    total_payment_journals: int
+    message: str
+    results: Optional[List[dict]] = None
+
+
+class PaymentJournalSyncStatisticsResponse(BaseModel):
+    """Statistics about payment journal sync status"""
+    total: int
+    synced: int
+    never_synced: int
+    errors: int
+    last_sync: Optional[datetime] = None

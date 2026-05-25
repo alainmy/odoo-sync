@@ -457,7 +457,7 @@ class OdooClient:
         # que almacene la configuración del webhook, y luego usar esa información para configurar el webhook en WooCommerce.
 
         webhook = self.search_read_sync(
-            model='ir.action.server',
+            model='ir.actions.server',
             domain=[['webhook_url', '=', url]],
             fields=['id', 'name'],
         )

@@ -285,5 +285,6 @@ class WooCommerceInstance(Base):
                               back_populates="instances")
 
     category_from_product = Column(Boolean, default=True)
-
+    
     website_id = Column(Integer)
+    odoo_journal_id = Column(Integer)

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, Request
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
@@ -34,6 +34,9 @@ from app.crud.category_sync import get_categories_map
 from app.db.session import get_db
 from app.repositories import ProductSyncRepository, CategorySyncRepository
 from app.schemas.admin import CategorySyncCreate, ProductSyncCreate
+from app.crud import instance
+from app.services.woocommerce.client import get_wc_api_from_instance_config, wc_request_with_logging
+from app.schemas.sync_schemas import PaymentGateway, PaymentGatewayListResponse
 router = APIRouter(prefix="/woocommerce", tags=["woocommerce"])
 
 _logger = logging.getLogger(__name__)
@@ -361,4 +364,41 @@ async def sync_categories_from_odoo(
         skipped=counters["skipped"],
         results=results,
         sync_duration_seconds=round(end_time - start_time, 2)
+    )
+
+
+@router.get("/payment-methods", response_model=PaymentGatewayListResponse)
+def get_payment_methods(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    Obtener lista de métodos de pago de WooCommerce.
+    """
+    instance_id = instance.get_active_instance(db, current_user.id)
+    
+    wc_config = {
+            "url": instance_id.woocommerce_url,
+            "consumer_key": instance_id.woocommerce_consumer_key,
+            "consumer_secret": instance_id.woocommerce_consumer_secret
+        }
+    wcapi = get_wc_api_from_instance_config(wc_config)
+    payment_methods = wc_request_with_logging("GET", "payment_gateways", wcapi=wcapi)
+    
+    return PaymentGatewayListResponse(
+        total_count=len(payment_methods),
+        payment_gateways=[
+            PaymentGateway(
+                id=pm.get("id"),
+                title=pm.get("title"),
+                description=pm.get("description"),
+                enabled=pm.get("enabled"),
+                order=pm.get("order"),
+                method_title=pm.get("method_title"),
+                method_description=pm.get("method_description"),
+                method_supports=pm.get("method_supports")
+            )
+            for pm in payment_methods
+        ]
     )

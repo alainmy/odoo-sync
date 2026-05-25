@@ -41,6 +41,7 @@ from app.repositories.client_sync_repository import ClientSyncRepository
 from app.services.odoo_service import create_customer_in_odoo
 from app.services.woocommerce.client import wc_request_with_logging
 from app.crud.odoo_order import OrderClient
+from app.repositories.payment_journal_sync_repository import PaymentJournalSyncRepository
 
 
 logger = logging.getLogger(__name__)
@@ -1488,9 +1489,10 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                             "product_uom_qty": 1,
                             "price_unit": shipping_line["total"],
                             "name": f"WC - Delivery - {shipping_line['method_title']}",
+                            "tax_id": odoo_taxes_ids
                         }))
         # Validate that we have at least one order line
-        if not order_lines and not existing_orders: 
+        if not order_lines and not existing_orders:
             logger.warning(
                 f"No valid order lines found for order {wc_order_id}")
             return {"success": False, "error": "No valid order lines found"}
@@ -1515,7 +1517,12 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             "order_line": order_lines
         }) if order_lines else None
         logger.info(f"Prepared sale order data for Odoo: {sale_order_data}")
-
+        payment_method_id = order_data.get("payment_method")
+        # Try to find payment method Alinea
+        payment_journal_repo = PaymentJournalSyncRepository(self.db)
+        payment_journal = payment_journal_repo.get_by_woocommerce_payment_method_id_and_instance(
+            payment_method_id, instance_id)
+        sale_journal_id = instance.odoo_journal_id
         if existing_orders:
             logger.info(
                 f"Order already exists in Odoo: {existing_orders[0]['id']}")
@@ -1540,14 +1547,19 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                     )
                     # Create a regular invoice for the order
                     invoice, order_d = order_client.create_invoice(
-                        order_id=order_id)
+                        order_id=order_id,
+                        sale_journal_id=sale_journal_id
+                        )
                     logger.info(f"Invoice created: {invoice}")
                     logger.info(f"Order data: {order_d}")
                     if invoice and order_d:
                         # create invoice payment
                         invoice_payment = order_client.create_invoice_payment(
                             invoice_id=invoice,
-                            order=order_d)
+                            order=order_d,
+                            journal_id=payment_journal.odoo_journal_id if payment_journal else None,
+                            payment_method_title=payment_journal.woocommerce_payment_method_name if payment_journal else None
+                        )
                         if not invoice_payment:
                             logger.error("No payment found in Odoo")
                             message = f"The payment for the invoice {invoice} could not be created"
@@ -1587,17 +1599,6 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                     f"Attempting to update note and order lines only."
                 )
                 try:
-                    # if order_data["status"] == "processing" and order_state != 'sale':
-                    #     order_client.cal_method(
-                    #         model='sale.order',
-                    #         metod='action_confirm',
-                    #         params=[order_id]
-                    #     )
-                    #     order_client.write(
-                    #         model='sale.order',
-                    #         vals=sale_order_data,
-                    #         record_id=order_id
-                    #         )
                     # Update note
                     if order_data["status"] in ["pending", "processing", "on-hold"]:
                         logger.info(
@@ -1670,12 +1671,17 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
 
                 # Create a regular invoice for the order
                 invoice, order_d = order_client.create_invoice(
-                    order_id=order_id)
+                    order_id=order_id,
+                    sale_journal_id=sale_journal_id
+                    )
                 if invoice and order_d:
                     # create invoice payment
                     invoice_payment = order_client.create_invoice_payment(
                         invoice_id=invoice,
-                        order=order_d)
+                        order=order_d,
+                        journal_id=payment_journal.odoo_journal_id if payment_journal else None,
+                        payment_method_title=payment_journal.woocommerce_payment_method_name if payment_journal else None
+                    )
                     if not invoice_payment:
                         logger.error("No payment found in Odoo")
                         message = f"The payment for the invoice {invoice} could not be created"

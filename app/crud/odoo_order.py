@@ -141,7 +141,7 @@ class OrderClient(OdooClient):
             raise HTTPException(status_code=500, detail=str(e))
 
     # create invoice
-    def create_invoice(self, order_id):
+    def create_invoice(self, order_id,sale_journal_id=None):
         
         order = self.search_read_sync(
             "sale.order",
@@ -205,6 +205,13 @@ class OrderClient(OdooClient):
                 status_code=400, detail="No se encontró factura en Odoo")
         invoice_id = sale_ivoices_ids[0]['invoice_ids'][0]
         logger.info(f"Invoice ID for invoice creation: {invoice_id}")
+        # Update invoice with sale journal
+        if sale_journal_id:
+            writed = self.write(
+                model="account.move",
+                vals={"journal_id": sale_journal_id},
+                record_id=invoice_id
+            )
         confirm_invoice = self.cal_method(
             'account.move',
             'action_post',
@@ -212,11 +219,13 @@ class OrderClient(OdooClient):
         )
         return invoice_id, order
     
-    def create_invoice_payment(self, invoice_id, order):
+    def create_invoice_payment(self, invoice_id, order,
+                               journal_id=None,
+                               payment_method_title=None):
         
         payment_method_line_id= self.search_read_sync(
             model="account.payment.method.line",
-            domain=[["code", "=", "manual"]],
+            domain=[["code", "=", "manual"], ["journal_id", "=", journal_id]],
             fields=["id", "name","journal_id"],
             limit=1
         )
@@ -227,11 +236,11 @@ class OrderClient(OdooClient):
         payment_wizard_id = self.create(
             model="account.payment.register",
             vals={
-               "journal_id": payment_method_line_id[0].get("journal_id")[0],
+               "journal_id": journal_id,
                 "partner_type": "customer",
                 "payment_method_line_id": payment_method_line_id[0].get("id"),
                 "amount": order.get("amount_total", 0),
-                "communication": f"WC-{order['name']}",
+                "communication": f"WC-{payment_method_title}",
                 "payment_date": datetime.datetime.now().strftime("%Y-%m-%d"),
             },
             context={

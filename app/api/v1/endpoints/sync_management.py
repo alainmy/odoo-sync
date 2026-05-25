@@ -17,9 +17,12 @@ from app.repositories import ProductSyncRepository
 from app.core.config import settings
 from app.auth.oauth2 import get_current_user
 from app.models.admin import Admin, ProductSync
+from app.models.payment_journal_sync import PaymentJournalSync
 from app.utils.instance_helpers import get_active_instance, get_active_instance_id
 from app.schemas.sync_schemas import (
     OdooProductListResponse,
+    PaymentJournalCreate,
+    PaymentJournalListResponse,
     ProductSyncStatusResponse,
     BatchSyncRequest,
     BatchSyncResponse,
@@ -32,10 +35,16 @@ from app.schemas.sync_schemas import (
     TaxSyncStatusResponse,
     BatchTaxSyncRequest,
     BatchTaxSyncResponse,
-    TaxSyncStatisticsResponse
+    TaxSyncStatisticsResponse,
+    PaymentJournalSyncStatusResponse,
+    OdooPaymentJournalListResponse,
+    BatchPaymentJournalSyncRequest,
+    BatchPaymentJournalSyncResponse,
+    PaymentJournalSyncStatisticsResponse
 )
 from app.tasks.sync_tasks import sync_product_to_woocommerce, sync_tax_to_woocommerce
 from app.repositories.tax_sync_repository import TaxSyncRepository
+from app.repositories.payment_journal_sync_repository import PaymentJournalSyncRepository
 from app.tasks.task_monitoring import create_task_response
 from app.api.v1.endpoints.odoo import get_session_id, get_odoo_from_active_instance
 from celery import group
@@ -747,3 +756,168 @@ async def get_tax_sync_statistics(
     except Exception as e:
         logger.error(f"Error getting tax statistics: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/payment-journals", response_model=PaymentJournalListResponse)
+async def list_payment_journal(
+    db: Session = Depends(get_db),
+    current_user: Admin = Depends(get_current_user)
+):
+    
+    instance = crud_instance.get_active_instance(
+            db, user_id=current_user.id)
+    
+    repo = PaymentJournalSyncRepository(db=db)
+    payment_jpurnals = repo.get_all_by_instance(instance.id)
+    
+    return PaymentJournalListResponse(
+        data=[
+            PaymentJournalSyncStatusResponse(
+                id=item.id,
+                odoo_journal_id=item.odoo_journal_id,
+                odoo_journal_name   =item.odoo_journal_name,
+                odoo_journal_type=item.odoo_journal_type,
+                odoo_journal_code=item.odoo_journal_code,
+                woocommerce_payment_method_id=item.woocommerce_payment_method_id,
+                woocommerce_payment_method_name=item.woocommerce_payment_method_name,
+                sync_status="synced" if item.last_synced_at else "never_synced",
+                last_synced_at=item.last_synced_at,
+                has_error=item.error,
+                error_message=item.error_details if item.error else None
+                ) for item in payment_jpurnals
+        ],
+        total_count= len(payment_jpurnals)
+    )
+
+@router.post("/payment-journals")
+async def create_payment_journal_mapping(
+    payment_journal: PaymentJournalCreate,
+    db: Session = Depends(get_db),
+    odoo: OdooClient = Depends(get_odoo_from_active_instance),
+    current_user: Admin = Depends(get_current_user)
+):
+    """
+    Create a mapping between a WooCommerce payment method and an Odoo journal.
+    This is the main endpoint requested by the user.
+    """
+    try:
+        # Get active instance
+        instance = crud_instance.get_active_instance(
+            db, user_id=current_user.id)
+        if not instance:
+            raise HTTPException(
+                status_code=404,
+                detail="No active instance found"
+            )
+        
+        # Check if mapping already exists for this WooCommerce payment method and instance
+        sync_repo = PaymentJournalSyncRepository(db)
+        existing_mapping = sync_repo.get_by_woocommerce_payment_method_id_and_instance(
+            payment_journal.woocommerce_payment_method_id, instance.id)
+        
+        if existing_mapping:
+            # Update existing mapping
+            updated_mapping = sync_repo.update_sync_record(
+                existing_mapping,
+                woocommerce_payment_method_name=payment_journal.woocommerce_payment_method_name,
+                odoo_journal_id=payment_journal.odoo_journal_id,
+                odoo_journal_name=payment_journal.odoo_journal_name,
+                odoo_journal_type=payment_journal.odoo_journal_type,
+                odoo_journal_code=payment_journal.odoo_journal_code,
+                message="Mapping updated via API"
+            )
+            
+            return PaymentJournalSyncStatusResponse(
+                odoo_id=updated_mapping.odoo_journal_id,
+                odoo_name=updated_mapping.odoo_journal_name,
+                odoo_journal_type=updated_mapping.odoo_journal_type,
+                odoo_journal_code=updated_mapping.odoo_journal_code,
+                woocommerce_payment_method_id=updated_mapping.woocommerce_payment_method_id,
+                woocommerce_payment_method_name=updated_mapping.woocommerce_payment_method_name,
+                sync_status="synced" if updated_mapping.last_synced_at else "never_synced",
+                last_synced_at=updated_mapping.last_synced_at,
+                has_error=updated_mapping.error,
+                error_message=updated_mapping.error_details if updated_mapping.error else None
+            )
+        else:
+            # Create new mapping
+            new_mapping = sync_repo.create_sync_record(
+                woocommerce_payment_method_id=payment_journal.woocommerce_payment_method_id,
+                woocommerce_payment_method_name=payment_journal.woocommerce_payment_method_name,
+                odoo_journal_id=payment_journal.odoo_journal_id,
+                odoo_journal_name=payment_journal.odoo_journal_name,
+                odoo_journal_type=payment_journal.odoo_journal_type,
+                odoo_journal_code=payment_journal.odoo_journal_code,
+                instance_id=instance.id,
+                message="Mapping created via API"
+            )
+            
+            return PaymentJournalSyncStatusResponse(
+                id=new_mapping.id,
+                odoo_journal_id=new_mapping.odoo_journal_id,
+                odoo_journal_name=new_mapping.odoo_journal_name,
+                odoo_journal_type=new_mapping.odoo_journal_type,
+                odoo_journal_code=new_mapping.odoo_journal_code,
+                woocommerce_payment_method_id=new_mapping.woocommerce_payment_method_id,
+                woocommerce_payment_method_name=new_mapping.woocommerce_payment_method_name,
+                sync_status="never_synced",  # Initially never synced
+                last_synced_at=new_mapping.last_synced_at,
+                has_error=new_mapping.error,
+                error_message=new_mapping.error_details if new_mapping.error else None
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating payment journal mapping: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error creating payment journal mapping: {str(e)}"
+        )
+
+@router.delete("/payment-journals/{journal_id}", 
+               summary="Delete a payment journal mapping")
+def delete_payment_journal_mapping(
+    journal_id: int,
+    db: Session = Depends(get_db),
+    current_user: Admin = Depends(get_current_user)
+):
+    """
+    Delete a payment journal mapping by its record ID.
+    """
+    try:
+        # Get instance configuration
+        instance = crud_instance.get_active_instance(db, user_id=current_user.id)
+        if not instance:
+            raise HTTPException(
+                status_code=404,
+                detail="No active instance found"
+            )
+        
+        # Find mapping by record ID and instance
+        sync_repo = PaymentJournalSyncRepository(db)
+        existing_mapping = db.query(PaymentJournalSync).filter(
+            PaymentJournalSync.id == journal_id,
+            PaymentJournalSync.instance_id == instance.id
+        ).first()
+        
+        if not existing_mapping:
+            raise HTTPException(
+                status_code=404,
+                detail="No payment journal mapping found"
+            )
+        
+        # Delete the mapping
+        sync_repo.delete_sync_record(existing_mapping)
+        
+        return {
+            "status": "success",
+            "message": f"Payment journal mapping deleted successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting payment journal mapping: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error deleting payment journal mapping: {str(e)}"
+        )

@@ -24,6 +24,7 @@ from app.db.session import get_db
 from sqlalchemy.orm import Session
 
 from app.schemas.language import OdooLanguageSchema
+from app.schemas.journal import OdooJournal, OdooJournalListResponse
 dotenv.load_dotenv()
 
 
@@ -920,7 +921,7 @@ async def test_invoice_and_payment(
             fields=["id", "name", "state","reconciled_payment_ids"],
             limit=1
         )
-        if not invoice_payments["result"]:
+        if not invoice_payments:
             _logger.error(f"No se encontró factura en Odoo")
             raise HTTPException(status_code=400, detail="No se encontró factura en Odoo")
         
@@ -937,3 +938,33 @@ async def test_invoice_and_payment(
     except Exception as e:
         _logger.error(f"Error inesperado en prueba de factura: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/journals", response_model=OdooJournalListResponse)
+async def get_payment_journals(
+    request: Request,
+    type: Optional[str] = Query(
+        None, description="Filtrar por tipo de diario (bank, cash,sale)"),
+    db: Session = Depends(get_db),
+    current_user: Admin = Depends(get_current_user),
+    odoo: OdooClient = Depends(get_session_id),
+):
+    """
+    Obtener lista de métodos de pago de WooCommerce.
+    """
+    
+    
+    payment_journals = odoo.search_read_sync(
+        model="account.journal",
+        domain=[["type", "in", ["bank", "cash"]]] if not type else [["type", "=", type]],
+        fields=["id", "name", "code", "type", "active"],
+        limit=100
+    )
+    if not payment_journals:
+        raise HTTPException(
+            status_code=404,
+            detail="No payment journals found"
+        )
+    return OdooJournalListResponse(
+        payment_journals=[OdooJournal(**journal) for journal in payment_journals],
+        total_count=len(payment_journals)
+    )
