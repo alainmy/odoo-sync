@@ -944,15 +944,11 @@ async def get_payment_journals(
     request: Request,
     type: Optional[str] = Query(
         None, description="Filtrar por tipo de diario (bank, cash,sale)"),
-    db: Session = Depends(get_db),
-    current_user: Admin = Depends(get_current_user),
-    odoo: OdooClient = Depends(get_session_id),
+    odoo: OdooClient = Depends(get_odoo_from_active_instance),
 ):
     """
     Obtener lista de métodos de pago de WooCommerce.
     """
-    
-    
     payment_journals = odoo.search_read_sync(
         model="account.journal",
         domain=[["type", "in", ["bank", "cash"]]] if not type else [["type", "=", type]],
