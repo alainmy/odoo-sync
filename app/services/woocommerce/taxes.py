@@ -30,6 +30,7 @@ except Exception as e:
 
 def sync_tax_to_woocommerce(
     tax_data: dict,
+    apply_tax_to_delivery: bool = False,
     db: Session = None,
     wcapi: API = None,
     instance_id: Optional[int] = None,
@@ -118,7 +119,8 @@ def sync_tax_to_woocommerce(
             "rate": str(tax_rate),
             "name": f"{country_code} - {tax_name} -- {tax_rate}",
             "country": country_code,
-            "shipping": False,
+            "shipping": apply_tax_to_delivery,
+            
         }
 
         if woocommerce_id and update_existing:

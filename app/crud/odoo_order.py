@@ -3,6 +3,7 @@
 import datetime
 import json
 import os
+from xml import dom
 import dotenv
 from fastapi import HTTPException
 import requests
@@ -223,9 +224,12 @@ class OrderClient(OdooClient):
                                journal_id=None,
                                payment_method_title=None):
         
+        domain = [["code", "=", "manual"]]
+        if journal_id:
+            domain.append(["journal_id", "=", journal_id])
         payment_method_line_id= self.search_read_sync(
             model="account.payment.method.line",
-            domain=[["code", "=", "manual"], ["journal_id", "=", journal_id]],
+            domain=domain,
             fields=["id", "name","journal_id"],
             limit=1
         )
@@ -236,7 +240,7 @@ class OrderClient(OdooClient):
         payment_wizard_id = self.create(
             model="account.payment.register",
             vals={
-               "journal_id": journal_id,
+               "journal_id": journal_id if journal_id else payment_method_line_id[0].get("journal_id")[0],
                 "partner_type": "customer",
                 "payment_method_line_id": payment_method_line_id[0].get("id"),
                 "amount": order.get("amount_total", 0),

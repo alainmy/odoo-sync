@@ -2475,8 +2475,25 @@ def sync_tax_to_woocommerce(
 
         from app.services.woocommerce.taxes import sync_tax_to_woocommerce as sync_tax_func
 
+        # Get product standard delivery tax
+        apply_tax_to_delivery = False
+        odoo_client = OdooClient(**odoo_config) if odoo_config else None
+        delivery_product = odoo_client.search_read_sync(
+            "product.product",
+            domain=[["default_code", "=", "Delivery_007"]],
+            fields=["id", "name", "taxes_id"],
+            limit=1
+        )
+        if delivery_product:
+            delivery_tax = delivery_product[0].get("taxes_id")
+            if delivery_tax and odoo_tax_data["id"] in delivery_tax:
+                apply_tax_to_delivery = True
+                logger.info(
+                    f"Tax {odoo_tax_data.get('id')} is applied to delivery product")
+
         result = sync_tax_func(
             tax_data=odoo_tax_data,
+            apply_tax_to_delivery=apply_tax_to_delivery,
             db=self.db,
             wcapi=wcapi,
             instance_id=instance_id,
