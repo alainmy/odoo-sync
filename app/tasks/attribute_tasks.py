@@ -88,7 +88,8 @@ def sync_attributes_from_odoo(
             url=instance.odoo_url,
             db=instance.odoo_db,
             username=instance.odoo_username,
-            password=instance.odoo_password
+            password=instance.odoo_password,
+            company_id=instance.company_id
         )
         if wc_config:
             wcapi = get_wc_api_from_instance_config(wc_config)

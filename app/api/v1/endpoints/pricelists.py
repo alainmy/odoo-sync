@@ -231,7 +231,8 @@ async def sync_product_prices(
         "url": instance.odoo_url,
         "db": instance.odoo_db,
         "username": instance.odoo_username,
-        "password": instance.odoo_password
+        "password": instance.odoo_password,
+        "company_id": instance.company_id
     }
     wc_config = {
         "url": instance.woocommerce_url,

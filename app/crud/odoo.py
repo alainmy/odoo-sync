@@ -36,11 +36,13 @@ class OdooClient:
     def __init__(self, url=None, db=None,
                  username=None,
                  password=None,
-                 context={}):
+                 context={},**kwargs):
         self.url = url if url else ODOO_URL
         self.db = db if db else ODOO_DB
         self.username = username if username else ODOO_USERNAME
         self.password = password if password else ODOO_PASSWORD
+        if kwargs.get('company_id') and not context.get('allowed_company_ids'):
+            self.context['allowed_company_ids'] = [kwargs['company_id']]
         self.context = context if context else self.context
 
     def web_authentication(self, base_url):

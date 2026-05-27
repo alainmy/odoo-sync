@@ -80,12 +80,14 @@ async def websites_from_odoo(
                 total=0,
                 websites=[]
             )
-
+        domain = []
         # Obtener lista de webs de Odoo
+        if odoo_config.company_id:
+            domain.append(["company_id", "=", odoo_config.company_id])
         websites = await odoo.search_read(
             uid,
             "website",
-            domain=[],
+            domain=domain,
             fields=["id", "name"],
             limit=100
         )

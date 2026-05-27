@@ -489,7 +489,8 @@ def sync_product_to_odoo(self,
             instance.odoo_url,
             instance.odoo_db,
             instance.odoo_username,
-            instance.odoo_password
+            instance.odoo_password,
+            company_id=instance.company_id
         )
         # Map WooCommerce product to Odoo format
         odoo_product_data = {
@@ -609,7 +610,8 @@ def sync_product_to_woocommerce(
             odoo_config["url"],
             odoo_config["db"],
             odoo_config["username"],
-            odoo_config["password"]
+            odoo_config["password"],
+            company_id=odoo_config.get("company_id")
         )
         instance = self.db.query(WooCommerceInstance).filter(
             WooCommerceInstance.id == instance_id).first()
@@ -781,7 +783,8 @@ def sync_product_to_woocommerce(
                 url=odoo_config["url"],
                 db=odoo_config["db"],
                 username=odoo_config["username"],
-                password=odoo_config["password"]
+                password=odoo_config["password"],
+                company_id=odoo_config.get("company_id")
             )
 
             # Validate attributes are synced
@@ -1218,7 +1221,8 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             instance.odoo_url,
             instance.odoo_db,
             instance.odoo_username,
-            instance.odoo_password
+            instance.odoo_password,
+            company_id=instance.company_id
         )
         wc_config = {
             "url": instance.woocommerce_url,
@@ -2573,7 +2577,8 @@ def full_tax_sync_odoo_to_woocommerce(
                     "url": instance.odoo_url,
                     "db": instance.odoo_db,
                     "username": instance.odoo_username,
-                    "password": instance.odoo_password
+                    "password": instance.odoo_password,
+                    "company_id": instance.company_id
                 }
                 wc_config = {
                     "url": instance.woocommerce_url,
@@ -2585,7 +2590,8 @@ def full_tax_sync_odoo_to_woocommerce(
             odoo_config["url"],
             odoo_config["db"],
             odoo_config["username"],
-            odoo_config["password"]
+            odoo_config["password"],
+            company_id=odoo_config.get("company_id")
         )
 
         wcapi = None

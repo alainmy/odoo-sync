@@ -81,6 +81,7 @@ def get_instance_configs(
         "db": instance.odoo_db,
         "username": instance.odoo_username,
         "password": instance.odoo_password,
+        "company_id": instance.company_id
     }
     
     wc_config = {

@@ -75,14 +75,16 @@ def sync_product_prices_task(
                 "url": settings.odoo_url,
                 "db": settings.odoo_db,
                 "username": settings.odoo_username,
-                "password": settings.odoo_password
+                "password": settings.odoo_password,
+                "company_id": None
             }
 
         odoo_client = OdooClient(
             odoo_config["url"],
             odoo_config["db"],
             odoo_config["username"],
-            odoo_config["password"]
+            odoo_config["password"],
+            company_id=odoo_config.get("company_id")
         )
         wcapi = create_wc_api_client(wc_config)
         service = PricelistService(db)
@@ -171,7 +173,8 @@ def sync_all_product_prices_task(
             odoo_config["url"],
             odoo_config["db"],
             odoo_config["username"],
-            odoo_config["password"]
+            odoo_config["password"],
+            company_id=odoo_config.get("company_id")
         )
         logger.info("[PRICELIST TASK] OdooClient created successfully")
 
@@ -231,10 +234,11 @@ def scheduled_price_sync_task(self):
 
             # Prepare configs
             odoo_config = {
-                "url": settings.odoo_url,
-                "db": settings.odoo_db,
-                "username": settings.odoo_username,
-                "password": settings.odoo_password
+                "url": instance.odoo_url,
+                "db": instance.odoo_db,
+                "username": instance.odoo_username,
+                "password": instance.odoo_password,
+                "company_id": instance.company_id
             }
             wc_config = {
                 "url": instance.woocommerce_url,
@@ -287,7 +291,8 @@ def fetch_odoo_pricelists_task(odoo_config: dict = None):
             odoo_config["url"],
             odoo_config["db"],
             odoo_config["username"],
-            odoo_config["password"]
+            odoo_config["password"],
+            company_id=odoo_config.get("company_id")
         )
         pricelists = odoo_client.search_read_sync(
             'product.pricelist',

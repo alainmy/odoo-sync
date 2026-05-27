@@ -63,12 +63,12 @@ async def sync_attributes_from_odoo(
 ):
     """
     Sincronizar atributos desde Odoo hacia WooCommerce (asíncrono con Celery)
-    
+
     Esta tarea se ejecuta en background usando Celery.
-    
+
     Args:
         request: Lista de atributos de Odoo con configuración de sync
-        
+
     Returns:
         ID de la tarea de Celery para seguimiento
     """
@@ -79,10 +79,10 @@ async def sync_attributes_from_odoo(
             status_code=404,
             detail="No hay ninguna instancia activa. Por favor activa una instancia."
         )
-    
+
     # Extraer IDs de los atributos a sincronizar
     attribute_ids = [attr.id for attr in request.attributes]
-    
+
     # Lanzar tarea de Celery
     task = sync_attributes_task.apply_async(
         kwargs={
@@ -92,11 +92,11 @@ async def sync_attributes_from_odoo(
             "update_existing": request.update_existing
         }
     )
-    
+
     _logger.info(
         f"Attribute sync task launched: {task.id} for {len(attribute_ids)} attributes"
     )
-    
+
     return {
         "task_id": task.id,
         "status": "pending",
@@ -113,19 +113,19 @@ async def sync_attributes_from_odoo_immediate(
 ):
     """
     Sincronizar atributos desde Odoo hacia WooCommerce (inmediato, sin Celery)
-    
+
     Útil para testing o sincronización de pocos atributos.
     Para grandes volúmenes usar el endpoint sin /immediate que usa Celery.
-    
+
     Flujo:
     1. Recibe lista de atributos desde Odoo (con sus valores)
     2. Crea/actualiza cada atributo en WooCommerce
     3. Sincroniza los valores (terms) de cada atributo
     4. Guarda mapeo en AttributeSync y AttributeValueSync
-    
+
     Args:
         request: Lista de atributos de Odoo con configuración de sync
-        
+
     Returns:
         Respuesta con resultados de sincronización
     """
@@ -136,7 +136,7 @@ async def sync_attributes_from_odoo_immediate(
             status_code=404,
             detail="No hay ninguna instancia activa. Por favor activa una instancia."
         )
-    
+
     start_time = time.time()
     results = []
     counters = {
@@ -146,9 +146,10 @@ async def sync_attributes_from_odoo_immediate(
         "updated": 0,
         "skipped": 0
     }
-    
-    _logger.info(f"Starting attribute sync for {len(request.attributes)} attributes")
-    
+
+    _logger.info(
+        f"Starting attribute sync for {len(request.attributes)} attributes")
+
     for odoo_attribute in request.attributes:
         try:
             # 1. Sincronizar atributo
@@ -159,7 +160,7 @@ async def sync_attributes_from_odoo_immediate(
                 create_if_not_exists=request.create_if_not_exists,
                 update_existing=request.update_existing
             )
-            
+
             # 2. Sincronizar valores si está habilitado y el atributo se creó/actualizó exitosamente
             values_synced = 0
             if request.sync_values and attribute_result.woocommerce_id and attribute_result.success:
@@ -171,25 +172,25 @@ async def sync_attributes_from_odoo_immediate(
                     create_if_not_exists=request.create_if_not_exists,
                     update_existing=request.update_existing
                 )
-                
+
                 # Contar valores exitosos
                 values_synced = sum(1 for v in value_results if v.success)
                 attribute_result.values_synced = values_synced
-                
+
                 _logger.info(
                     f"Attribute '{odoo_attribute.name}': "
                     f"{values_synced}/{len(value_results)} values synced"
                 )
-            
+
             results.append(attribute_result)
-            
+
             # Actualizar contadores
             if attribute_result.success:
                 counters["successful"] += 1
                 counters[attribute_result.action] += 1
             else:
                 counters["failed"] += 1
-                
+
         except Exception as e:
             _logger.error(f"Error syncing attribute {odoo_attribute.id}: {e}")
             results.append(AttributeSyncResult(
@@ -203,9 +204,9 @@ async def sync_attributes_from_odoo_immediate(
                 values_synced=0
             ))
             counters["failed"] += 1
-    
+
     end_time = time.time()
-    
+
     return AttributeSyncResponse(
         total_processed=len(request.attributes),
         successful=counters["successful"],
@@ -225,28 +226,28 @@ async def get_attribute_sync_task_status(
 ):
     """
     Obtener estado de una tarea de sincronización de atributos
-    
+
     Args:
         task_id: ID de la tarea de Celery
-        
+
     Returns:
         Estado actual de la tarea
     """
     task_result = AsyncResult(task_id)
-    
+
     response = {
         "task_id": task_id,
         "status": task_result.status,
         "ready": task_result.ready(),
         "successful": task_result.successful() if task_result.ready() else None,
     }
-    
+
     if task_result.ready():
         if task_result.successful():
             response["result"] = task_result.result
         else:
             response["error"] = str(task_result.info)
-    
+
     return response
 
 
@@ -259,7 +260,7 @@ async def get_attribute_syncs(
 ):
     """
     Listar todas las sincronizaciones de atributos
-    
+
     Returns:
         Lista de sincronizaciones con su estado
     """
@@ -269,14 +270,14 @@ async def get_attribute_syncs(
             status_code=404,
             detail="No hay ninguna instancia activa"
         )
-    
+
     repo = AttributeSyncRepository(db)
     syncs = repo.get_attribute_syncs(
         instance_id=instance.id,
         skip=skip,
         limit=limit
     )
-    
+
     return [
         AttributeSyncStatus(
             id=sync.id,
@@ -305,10 +306,10 @@ async def get_attribute_sync(
 ):
     """
     Obtener estado de sincronización de un atributo específico
-    
+
     Args:
         odoo_attribute_id: ID del atributo en Odoo
-        
+
     Returns:
         Estado de sincronización
     """
@@ -318,16 +319,16 @@ async def get_attribute_sync(
             status_code=404,
             detail="No hay ninguna instancia activa"
         )
-    
+
     repo = AttributeSyncRepository(db)
     sync = repo.get_attribute_sync_by_odoo_id(odoo_attribute_id, instance.id)
-    
+
     if not sync:
         raise HTTPException(
             status_code=404,
             detail=f"No se encontró sincronización para el atributo Odoo ID {odoo_attribute_id}"
         )
-    
+
     return AttributeSyncStatus(
         id=sync.id,
         odoo_attribute_id=sync.odoo_attribute_id,
@@ -353,10 +354,10 @@ async def get_attribute_value_syncs(
 ):
     """
     Obtener sincronizaciones de valores de un atributo
-    
+
     Args:
         odoo_attribute_id: ID del atributo en Odoo
-        
+
     Returns:
         Lista de valores sincronizados
     """
@@ -366,23 +367,24 @@ async def get_attribute_value_syncs(
             status_code=404,
             detail="No hay ninguna instancia activa"
         )
-    
+
     repo = AttributeSyncRepository(db)
-    
+
     # Primero obtener el sync del atributo
-    attribute_sync = repo.get_attribute_sync_by_odoo_id(odoo_attribute_id, instance.id)
+    attribute_sync = repo.get_attribute_sync_by_odoo_id(
+        odoo_attribute_id, instance.id)
     if not attribute_sync or not attribute_sync.woocommerce_id:
         raise HTTPException(
             status_code=404,
             detail=f"Atributo Odoo ID {odoo_attribute_id} no está sincronizado con WooCommerce"
         )
-    
+
     # Obtener valores sincronizados
     value_syncs = repo.get_attribute_value_syncs_by_attribute(
         woocommerce_attribute_id=attribute_sync.woocommerce_id,
         instance_id=instance.id
     )
-    
+
     return [
         AttributeValueSyncStatus(
             id=sync.id,
@@ -408,7 +410,7 @@ async def get_attribute_statistics(
 ):
     """
     Obtener estadísticas de sincronización de atributos
-    
+
     Returns:
         Estadísticas globales
     """
@@ -418,10 +420,10 @@ async def get_attribute_statistics(
             status_code=404,
             detail="No hay ninguna instancia activa"
         )
-    
+
     repo = AttributeSyncRepository(db)
     stats = repo.get_sync_statistics(instance.id)
-    
+
     return {
         "instance_id": instance.id,
         "instance_name": instance.name,
@@ -438,7 +440,7 @@ async def list_woocommerce_attributes(
 ):
     """
     Listar atributos directamente desde WooCommerce
-    
+
     Útil para debugging y verificación
     """
     instance = crud_instance.get_active_instance(db, user_id=current_user.id)
@@ -447,13 +449,13 @@ async def list_woocommerce_attributes(
             status_code=404,
             detail="No hay ninguna instancia activa"
         )
-    
+
     attributes = await get_woocommerce_attributes(
         instance_id=instance.id,
         page=page,
         per_page=per_page
     )
-    
+
     return {
         "total": len(attributes),
         "page": page,
@@ -472,7 +474,7 @@ async def list_woocommerce_attribute_terms(
 ):
     """
     Listar terms de un atributo desde WooCommerce
-    
+
     Args:
         attribute_id: ID del atributo en WooCommerce
     """
@@ -482,13 +484,13 @@ async def list_woocommerce_attribute_terms(
             status_code=404,
             detail="No hay ninguna instancia activa"
         )
-    
+
     terms = await get_woocommerce_attribute_terms(
         attribute_id=attribute_id,
         page=page,
         per_page=per_page
     )
-    
+
     return {
         "attribute_id": attribute_id,
         "total": len(terms),
@@ -508,12 +510,12 @@ async def list_odoo_attributes(
 ):
     """
     Listar atributos disponibles en Odoo
-    
+
     Args:
         limit: Cantidad máxima de atributos a retornar
         offset: Offset para paginación
         name_filter: Filtro opcional por nombre
-    
+
     Returns:
         Lista de atributos de Odoo con sus valores
     """
@@ -523,7 +525,7 @@ async def list_odoo_attributes(
             status_code=404,
             detail="No hay ninguna instancia activa"
         )
-    
+
     # Conectar a Odoo
     odoo_client = OdooClient(
         url=instance.odoo_url,
@@ -531,14 +533,14 @@ async def list_odoo_attributes(
         username=instance.odoo_username,
         password=instance.odoo_password
     )
-    
+
     uid = await odoo_client.odoo_authenticate()
     if not uid:
         raise HTTPException(
             status_code=401,
             detail="No se pudo autenticar con Odoo"
         )
-    
+
     # Obtener atributos de Odoo
     try:
         attributes = await get_odoo_attributes(
@@ -559,18 +561,21 @@ async def list_odoo_attributes(
 # ==================== ATTRIBUTE MANAGEMENT ENDPOINTS ====================
 
 # Create a second router for attribute management
-management_router = APIRouter(prefix="/attribute-management", tags=["Attribute Management"])
+management_router = APIRouter(
+    prefix="/attribute-management", tags=["Attribute Management"])
 
 
 @management_router.get("/attributes", response_model=AttributeListResponse)
 async def list_odoo_attributes_with_sync_status(
-    limit: int = Query(50, le=200, description="Number of attributes to return"),
+    limit: int = Query(
+        50, le=200, description="Number of attributes to return"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
     filter_status: Optional[str] = Query(
         None,
         description="Filter by sync status: never_synced, synced, error"
     ),
-    search: Optional[str] = Query(None, description="Search by attribute name"),
+    search: Optional[str] = Query(
+        None, description="Search by attribute name"),
     db: Session = Depends(get_db),
     odoo_client: OdooClient = Depends(get_odoo_from_active_instance),
     current_user: Admin = Depends(get_current_user)
@@ -580,7 +585,8 @@ async def list_odoo_attributes_with_sync_status(
     """
     try:
         # Get active instance
-        instance = crud_instance.get_active_instance(db, user_id=current_user.id)
+        instance = crud_instance.get_active_instance(
+            db, user_id=current_user.id)
         if not instance:
             raise HTTPException(
                 status_code=404,
@@ -605,14 +611,16 @@ async def list_odoo_attributes_with_sync_status(
         if search:
             domain.append(["name", "ilike", search])
 
-        _logger.info(f"Fetching attributes from Odoo: domain={domain}, limit={limit}")
+        _logger.info(
+            f"Fetching attributes from Odoo: domain={domain}, limit={limit}")
 
         # Fetch from Odoo
         odoo_response = await odoo_client.search_read(
             uid,
             "product.attribute",
             domain=domain if domain else [],
-            fields=["id", "name", "display_name", "display_type", "create_variant"],
+            fields=["id", "name", "display_name",
+                    "display_type", "create_variant"],
             limit=limit,
             offset=offset
         )
@@ -630,12 +638,13 @@ async def list_odoo_attributes_with_sync_status(
                 uid,
                 "product.attribute.value",
                 domain=[["attribute_id", "=", attr["id"]]],
-                fields=["id", "name", "display_name", "html_color", "display_type"],
+                fields=["id", "name", "display_name",
+                        "html_color", "display_type"],
                 limit=1000
             )
             values_data = values_response.get("result", [])
             value_count = len(values_data)
-            
+
             # Convert values to OdooAttributeValue schema
             from app.schemas.attributes import OdooAttributeValue
             values = []
@@ -676,11 +685,13 @@ async def list_odoo_attributes_with_sync_status(
                 "error_message": sync_record.message if sync_record and sync_record.error else None
             })
 
-        _logger.info(f"Returning {len(enriched_attributes)} attributes after filtering")
+        _logger.info(
+            f"Returning {len(enriched_attributes)} attributes after filtering")
 
         return AttributeListResponse(
             total_count=product_count,
-            attributes=[AttributeSyncStatusResponse(**a) for a in enriched_attributes],
+            attributes=[AttributeSyncStatusResponse(
+                **a) for a in enriched_attributes],
             filters_applied={
                 "status": filter_status,
                 "search": search,
@@ -690,7 +701,8 @@ async def list_odoo_attributes_with_sync_status(
         )
 
     except Exception as e:
-        _logger.error(f"Error fetching attributes with sync status: {e}", exc_info=True)
+        _logger.error(
+            f"Error fetching attributes with sync status: {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail=f"Error fetching attributes: {str(e)}")
 
@@ -712,7 +724,8 @@ async def batch_sync_attributes(
             "url": instance.odoo_url,
             "db": instance.odoo_db,
             "username": instance.odoo_username,
-            "password": instance.odoo_password
+            "password": instance.odoo_password,
+            "company_id": instance.company_id
         }
         wc_config = {
             "url": instance.woocommerce_url,
@@ -730,7 +743,8 @@ async def batch_sync_attributes(
             url=instance.odoo_url,
             db=instance.odoo_db,
             username=instance.odoo_username,
-            password=instance.odoo_password
+            password=instance.odoo_password,
+            company_id=instance.company_id
         )
 
         # Authenticate with Odoo
@@ -746,7 +760,8 @@ async def batch_sync_attributes(
             uid,
             "product.attribute",
             domain=[["id", "in", request.ids]],
-            fields=["id", "name", "display_name", "display_type", "create_variant"]
+            fields=["id", "name", "display_name",
+                    "display_type", "create_variant"]
         )
 
         attributes = odoo_response.get("result", [])
@@ -760,7 +775,8 @@ async def batch_sync_attributes(
         # Create task group for batch sync
         for attr in attributes:
             try:
-                _logger.info(f"Queuing attribute {attr.get('id')}: {attr.get('name')}")
+                _logger.info(
+                    f"Queuing attribute {attr.get('id')}: {attr.get('name')}")
                 task = sync_single_attribute_task.apply_async(
                     args=[instance.id, attr.get("id")],
                     kwargs={
@@ -770,12 +786,14 @@ async def batch_sync_attributes(
                     queue="sync_queue"
                 )
                 task_ids.append(str(task.id))
-                _logger.info(f"Attribute {attr.get('id')} queued with task_id: {task.id}")
+                _logger.info(
+                    f"Attribute {attr.get('id')} queued with task_id: {task.id}")
             except Exception as e:
-                _logger.error(f"Error queuing attribute {attr.get('id')}: {e}", exc_info=True)
+                _logger.error(
+                    f"Error queuing attribute {attr.get('id')}: {e}", exc_info=True)
 
         # for attr in attributes:
-            
+
         # task_group = group([
         #     sync_single_attribute_task.s(
         #         instance_id=instance.id,
@@ -811,7 +829,8 @@ async def get_attribute_sync_statistics(
     """
     try:
         # Get active instance
-        instance = crud_instance.get_active_instance(db, user_id=current_user.id)
+        instance = crud_instance.get_active_instance(
+            db, user_id=current_user.id)
         if not instance:
             raise HTTPException(
                 status_code=404,
@@ -823,7 +842,8 @@ async def get_attribute_sync_statistics(
             url=instance.odoo_url,
             db=instance.odoo_db,
             username=instance.odoo_username,
-            password=instance.odoo_password
+            password=instance.odoo_password,
+            company_id=instance.company_id
         )
 
         # Authenticate with Odoo
@@ -861,6 +881,6 @@ async def get_attribute_sync_statistics(
         )
 
     except Exception as e:
-        _logger.error(f"Error getting attribute statistics: {e}", exc_info=True)
+        _logger.error(
+            f"Error getting attribute statistics: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
-

@@ -99,6 +99,8 @@ async def list_odoo_products_with_sync_status(
             domain.append(["categ_id", "=", category_id])
         if tag_ids:
             domain.append(["product_tag_ids", "in", tag_ids])
+        if active_instance.company_id:
+            domain.append(["company_id", "=", active_instance.company_id])
         domain.append(["sale_ok", "=", True])
         domain.append(["website_id", "=", active_instance.website_id])
         # Fetch from Odoo (over-fetch to account for status filtering)
@@ -261,7 +263,8 @@ async def batch_sync_products(
             "url": instance.odoo_url,
             "db": instance.odoo_db,
             "username": instance.odoo_username,
-            "password": instance.odoo_password
+            "password": instance.odoo_password,
+            "company_id": instance.company_id
         }
         wc_config = {
             "url": instance.woocommerce_url,
@@ -460,7 +463,8 @@ async def get_sync_statistics(
             url=instance.odoo_url,
             db=instance.odoo_db,
             username=instance.odoo_username,
-            password=instance.odoo_password
+            password=instance.odoo_password,
+            company_id=instance.company_id
         )
         uid = await odoo_client.odoo_authenticate()
         if not uid:
@@ -672,7 +676,8 @@ async def batch_sync_taxes(
             "url": instance.odoo_url,
             "db": instance.odoo_db,
             "username": instance.odoo_username,
-            "password": instance.odoo_password
+            "password": instance.odoo_password,
+            "company_id": instance.company_id
         }
         wc_config = {
             "url": instance.woocommerce_url,

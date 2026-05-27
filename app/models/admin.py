@@ -288,3 +288,4 @@ class WooCommerceInstance(Base):
     
     website_id = Column(Integer)
     odoo_journal_id = Column(Integer)
+    company_id = Column(Integer)

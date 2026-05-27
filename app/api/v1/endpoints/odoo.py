@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.schemas.language import OdooLanguageSchema
 from app.schemas.journal import OdooJournal, OdooJournalListResponse
+from app.schemas.websites import OdooCompany, OdooCompanyListResponse
 dotenv.load_dotenv()
 
 
@@ -119,6 +120,7 @@ async def get_odoo_from_active_instance(
         "lang": request.headers.get("lang", instance.odoo_language or "en_US"),
         "tz": request.headers.get("tz", "America/Havana"),
         "website_id": instance.website_id or 1,
+        "allowed_company_ids": [instance.company_id] if instance.company_id else [1]
     })
 
     if session:
@@ -963,4 +965,40 @@ async def get_payment_journals(
     return OdooJournalListResponse(
         payment_journals=[OdooJournal(**journal) for journal in payment_journals],
         total_count=len(payment_journals)
+    )
+    
+@router.get("/companies", response_model=OdooCompanyListResponse)
+async def get_companies(
+    request: Request,
+    odoo: OdooClient = Depends(get_odoo_from_active_instance),
+):
+    """
+    Obtener lista de empresas de Odoo.
+    """
+    odoo_client = odoo
+    uid = await odoo_client.odoo_authenticate()
+    if not uid:
+        raise HTTPException(
+            status_code=401,
+            detail="No se pudo autenticar con Odoo"
+        )
+    companies = await odoo_client.search_read(
+        uid,
+        "res.company",
+        fields=["id", "name", "vat"],
+        limit=100
+    )
+    companies = companies.get("result", [])
+    if not companies:
+        raise HTTPException(
+            status_code=404,
+            detail="No companies found"
+        )
+    return OdooCompanyListResponse(
+        companies=[OdooCompany(
+            id=company["id"],
+            name=company["name"],
+            vat=company.get("vat") if company.get("vat") else None
+        ) for company in companies],
+        total_count=len(companies)
     )

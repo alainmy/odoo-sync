@@ -91,6 +91,7 @@ def schedule_multi_instance_product_sync(self) -> Dict[str, Any]:
                     "db": instance.odoo_db,
                     "username": instance.odoo_username,
                     "password": instance.odoo_password,
+                    "company_id": instance.company_id
                 }
 
                 wc_config = {
@@ -233,6 +234,7 @@ def schedule_multi_instance_order_sync(self) -> Dict[str, Any]:
                     "db": instance.odoo_db,
                     "username": instance.odoo_username,
                     "password": instance.odoo_password,
+                    "company_id": instance.company_id
                 }
 
                 wc_config = {
@@ -352,7 +354,7 @@ def auto_sync_stock(self) -> Dict[str, Any]:
             settings.odoo_url,
             settings.odoo_db,
             settings.odoo_username,
-            settings.odoo_password
+            settings.odoo_password,
         )
 
         # Get products with stock information

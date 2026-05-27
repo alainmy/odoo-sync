@@ -9,6 +9,7 @@ class OodooConfig(BaseModel):
     db: str
     username: str
     password: str
+    company_id: Optional[int] = None
 
 
 class Website(BaseModel):
@@ -23,3 +24,11 @@ class WebsiteListResponse(BaseModel):
 
 class WebsiteResponse(BaseModel):
     website: Website
+
+class OdooCompany(BaseModel):
+    id: int
+    name: str
+    vat: Optional[str] = None
+class OdooCompanyListResponse(BaseModel):
+    total_count: Optional[int] = None
+    companies: Optional[List[OdooCompany]] = []
