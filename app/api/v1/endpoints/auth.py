@@ -112,8 +112,7 @@ def update_users(
             user.hashed_password = get_password_hash(data.changed_password)
         if data.full_name:
             user.full_name = data.full_name
-        if data.is_superuser:
-            user.is_superuser = data.is_superuser
+        user.is_superuser = data.is_superuser
         db.commit()
         db.refresh(user)
         return UserBase(username=user.username, email=user.email)
