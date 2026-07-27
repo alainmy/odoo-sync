@@ -91,6 +91,13 @@ async def list_odoo_products_with_sync_status(
                 status_code=301, detail="Failed to authenticate with Odoo")
         # Build Odoo domain for filtering
         domain = []
+        companies = await odoo.search_read(
+            uid,
+            domain=[],
+            fields=["id", "name"],
+            model="res.company",
+        )
+        companies = companies.get('result',[])
         if search:
             domain.append("|")
             domain.append(["name", "ilike", search])
@@ -99,7 +106,7 @@ async def list_odoo_products_with_sync_status(
             domain.append(["categ_id", "=", category_id])
         if tag_ids:
             domain.append(["product_tag_ids", "in", tag_ids])
-        if active_instance.company_id:
+        if active_instance.company_id and len(companies) > 1:
             domain.append(["company_id", "=", active_instance.company_id])
         domain.append(["sale_ok", "=", True])
         domain.append(["website_id", "=", active_instance.website_id])
