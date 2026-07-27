@@ -110,6 +110,9 @@ async def list_odoo_products_with_sync_status(
             domain.append(["company_id", "=", active_instance.company_id])
         domain.append(["sale_ok", "=", True])
         domain.append(["website_id", "=", active_instance.website_id])
+        domain_count = ["sale_ok", "=", True]
+        if active_instance.company_id and len(companies) > 1:
+            domain_count.append(["company_id", "=", active_instance.company_id])
         # Fetch from Odoo (over-fetch to account for status filtering)
         # If filtering by status, we need more products since some will be filtered out
         # fetch_limit = offset
@@ -120,7 +123,7 @@ async def list_odoo_products_with_sync_status(
         search_count = await odoo.search_count(
             uid,
             "product.template",
-            domain=[["sale_ok", "=", True]]
+            domain=domain_count
         )
         product_count = search_count["result"]
         odoo_response = await odoo.search_read(
