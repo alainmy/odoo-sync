@@ -109,7 +109,8 @@ async def list_odoo_products_with_sync_status(
         if active_instance.company_id and len(companies) > 1:
             domain.append(["company_id", "=", active_instance.company_id])
         domain.append(["sale_ok", "=", True])
-        domain.append(["website_id", "=", active_instance.website_id])
+        domain.append(["website_id", "in", [active_instance.website_id, False]])
+        domain.append(["is_published", "=", True])
         domain_count = [["sale_ok", "=", True]]
         if active_instance.company_id and len(companies) > 1:
             domain_count.append(["company_id", "=", active_instance.company_id])
