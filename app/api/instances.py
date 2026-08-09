@@ -120,6 +120,14 @@ async def create_instance(
             webhook = odoo_client.get_webhook_by_url(
                 url=odoo_webhook_url_template.format(host=settings.fast_api_host,
                                                      instance_id=instance_created.id))
+            webhook_odoo_url = "{host}/api/v1/webhook-receiver/odoo/action/{instance_id}/order.update"
+            webhook = odoo_client.get_webhook_by_url(
+                url=webhook_odoo_url.format(host=settings.fast_api_host,
+                                            instance_id=instance_created.id),
+                model_webhook='product.template',
+                model_webhook_fields=['id', 'name',
+                                      'is_published', 'description_sale']
+            )
         """Crear una nueva instancia"""
         return instance_created
     except Exception as e:
@@ -188,6 +196,14 @@ async def update_instance(
             webhook = odoo_client.get_webhook_by_url(
                 url=odoo_webhook_url_template.format(host=settings.fast_api_host,
                                                      instance_id=instance_id))
+            webhook_odoo_url = "{host}/api/v1/webhook-receiver/odoo/action/{instance_id}/order.update"
+            webhook = odoo_client.get_webhook_by_url(
+                url=webhook_odoo_url.format(host=settings.fast_api_host,
+                                            instance_id=instance_id),
+                model_webhook='product.template',
+                model_webhook_fields=['id', 'name',
+                                      'is_published', 'description_sale']
+            )
         instance = crud_instance.update_instance(
             db,
             instance_id=instance_id,
@@ -225,6 +241,7 @@ async def delete_instance(
         uid = await odoo_client.odoo_authenticate()
         if uid:
             odoo_webhook_url_template = "{host}/api/v1/webhook-receiver/odoo/{instance_id}/order_update"
+            odoo_action_webhook_url_template = "{host}/api/v1/webhook-receiver/odoo/action/{instance_id}/order.update"
             webhook = odoo_client.get_webhook_by_url(
                 url=odoo_webhook_url_template.format(host=settings.fast_api_host,
                                                      instance_id=instance_id))
@@ -232,6 +249,13 @@ async def delete_instance(
                 odoo_client.delete_webhook(webhook_id=webhook['id'])
                 logger.info(
                     f"Deleted Odoo webhook with ID {webhook['id']} for instance {instance_id}")
+            webhook = odoo_client.get_webhook_by_url(
+                url=odoo_action_webhook_url_template.format(host=settings.fast_api_host,
+                                                     instance_id=instance_id))
+            if webhook:
+                odoo_client.delete_webhook(webhook_id=webhook['id'])
+                logger.info(
+                    f"Deleted Odoo action webhook with ID {webhook['id']} for instance {instance_id}")
     """Eliminar una instancia"""
     deleted = crud_instance.delete_instance(
         db, instance_id=instance_id, user_id=current_user.id)

@@ -1,12 +1,13 @@
 """API endpoints for receiving WooCommerce webhooks."""
 
 import logging
+from operator import is_
 from typing import Dict, Any
 from fastapi import APIRouter, Request, HTTPException, Header, Depends, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models.admin import WooCommerceInstance
+from app.models.admin import ProductSync, WooCommerceInstance
 from app.services.webhook_processor import WebhookProcessor
 from app.tasks.webhook_tasks import process_webhook
 from app.services.woocommerce.client import wc_request_with_logging
@@ -315,4 +316,107 @@ async def receive_odoo_webhook(
     # For now, just log the received webhook
     logger.info(
         f"Received Odoo webhook for instance {instance_id}, topic {topic}")
+    return {"status": "ok", "message": "Odoo webhook received"}
+
+
+async def update_wc_product_data(instance: int, request: Request, db: Session = Depends(get_db)):
+    """
+    Endpoint to receive webhooks from Odoo.
+
+    Args:
+        instance_id: WooCommerce instance ID
+        topic: Webhook topic (e.g., product.created)
+        request: FastAPI request object
+        db: Database session
+
+    Returns:
+        Acknowledgment response
+    """
+    try:
+        # Collect all webhook headers for logging
+        body = await request.json()
+        wc_config = {
+            "url": instance.woocommerce_url,
+            "consumer_key": instance.woocommerce_consumer_key,
+            "consumer_secret": instance.woocommerce_consumer_secret,
+        }
+        prodduct_id = body.get('product_id')
+        # get product sync record
+        product_sync = db.query(ProductSync).filter(
+            ProductSync.odoo_id == prodduct_id,
+            ProductSync.instance_id == instance.id
+        ).first()
+        if not product_sync:
+            logger.error(f"Product sync record not found for product {prodduct_id}")
+            return {"status": "ok", "message": "Product sync record not found"}
+        if not product_sync.woocommerce_id:
+            # Buscar en WooCommerce
+            wcapi = create_wc_api_client(wc_config)
+            wc_product = wc_request_with_logging(
+                "GET",
+                f"products/{product_sync.woocommerce_id}",
+                wcapi=wcapi
+            )
+            if wc_product:
+                # Update product in woocommerce
+                re = wc_request_with_logging(
+                    "PUT",
+                    f"products/{product_sync.woocommerce_id}",
+                    params={
+                        "name": body.get('name'),
+                        "publish": "publish" if body.get('is_published') else "draft",
+                        "description": body.get('description_sale'),
+                        },
+                    wcapi=wcapi
+                )
+                if re:
+                    logger.info(f"Product {product_sync.woocommerce_id} updated in WooCommerce")
+                else:
+                    logger.error(f"Failed to update product {product_sync.woocommerce_id} in WooCommerce")
+                    return {"status": "ok", "message": "Failed to update product in WooCommerce"}
+            else:
+                logger.error(f"Failed to find product {product_sync.woocommerce_id} in WooCommerce")
+                return {"status": "ok", "message": "Failed to find product in WooCommerce"}
+                
+        logger.info(
+            f"Received webhook for instance {instance.id}")
+        return {"status": "ok", "message": "Odoo webhook received"}
+    except Exception as e:
+        logger.error(f"Error processing Odoo webhook: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.post("/odoo/action/{instance_id}/{topic}")
+async def receive_odoo_webhook(
+    instance_id: int,
+    topic: str,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    Endpoint to receive webhooks from Odoo.
+
+    Args:
+        instance_id: WooCommerce instance ID
+        topic: Webhook topic (e.g., product.updated)
+        request: FastAPI request object
+        db: Database session    
+    """
+    body = await request.json()
+    instance = db.query(WooCommerceInstance).filter(
+        WooCommerceInstance.id == instance_id
+    ).first()
+    if not instance:
+        logger.error(f"Instance {instance_id} not found for Odoo webhook")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Instance {instance_id} not found"
+        )
+    if topic == 'order.update':
+        
+        update_wc_product_data(instance_id, request, db)
+        
     return {"status": "ok", "message": "Odoo webhook received"}

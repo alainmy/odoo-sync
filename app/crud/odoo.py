@@ -453,7 +453,9 @@ class OdooClient:
             logger.error(f"Error in get_model_id_by_name: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
 
-    def get_webhook_by_url(self, url):
+    def get_webhook_by_url(self, url,model_webhook = 'sale.order',
+                           model_webhook_fields=['id', 'name', 'state', 'invoice_status',
+                                        'delivery_status', 'client_order_ref']):
         """Crea un webhook en Odoo usando el modelo ir.action.server para almacenar la configuración."""
         # Aquí podrías implementar la lógica para crear un registro en un modelo personalizado de Odoo
         # que almacene la configuración del webhook, y luego usar esa información para configurar el webhook en WooCommerce.
@@ -465,13 +467,12 @@ class OdooClient:
         )
         if not webhook:
             try:
-                model_id = self.get_model_id_by_name('sale.order')
+                model_id = self.get_model_id_by_name(model_webhook)
                 fields = self.search_read_sync(
                     model='ir.model.fields',
                     domain=[
                         ['model_id', '=', model_id[0]['id']],
-                        ['name', 'in', ['id', 'name', 'state', 'invoice_status',
-                                        'delivery_status', 'client_order_ref']]
+                        ['name', 'in', model_webhook_fields]
                     ],  # Usar el ID del modelo 'sale.order'
                     fields=['id', 'name']
                 )
@@ -514,7 +515,7 @@ class OdooClient:
                     raise HTTPException(status_code=500,
                                         detail=str(result["error"]))
                 result = result.get("result", [])
-                if result:
+                if result and model_webhook == 'sale.order':
                     self.create_plannification_action(result)
             except Exception as e:
                 logger.error(f"Error in get_webhook_by_url: {str(e)}")
