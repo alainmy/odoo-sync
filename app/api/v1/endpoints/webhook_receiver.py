@@ -415,7 +415,7 @@ async def receive_odoo_webhook(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Instance {instance_id} not found"
         )
-    if topic == 'order.update':
+    if topic == 'product.update':
         
         update_wc_product_data(instance_id, request, db)
         

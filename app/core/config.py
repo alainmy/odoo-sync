@@ -8,6 +8,10 @@ class Settings(BaseSettings):
     fastapi_secret_key: str = "supersecretkey"
     fastapi_debug: bool = True
     fast_api_host: str = "http://localhost:8000"
+    postgres_user: str = "fastapi_user"
+    postgres_password: str = "Fastadmin123*"
+    postgres_root_password: str = "root_password_123"
+    postgres_database: str ="fastapi_db"
     webhook_url: str = "https://diphthongous-ponderingly-hilaria.ngrok-free.dev"
     image_dir: str = "app/images/products"
     fastapi_database: str = "fastapi_db"

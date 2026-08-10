@@ -43,6 +43,8 @@ from app.schemas.sync_schemas import (
     PaymentJournalSyncStatisticsResponse
 )
 from app.tasks.sync_tasks import sync_product_to_woocommerce, sync_tax_to_woocommerce
+from app.services.woocommerce.client import wc_request_with_logging
+from app.tasks.sync_helpers import create_wc_api_client
 from app.repositories.tax_sync_repository import TaxSyncRepository
 from app.repositories.payment_journal_sync_repository import PaymentJournalSyncRepository
 from app.tasks.task_monitoring import create_task_response
@@ -109,7 +111,10 @@ async def list_odoo_products_with_sync_status(
         if active_instance.company_id and len(companies) > 1:
             domain.append(["company_id", "=", active_instance.company_id])
         domain.append(["sale_ok", "=", True])
-        domain.append(["website_id", "in", [active_instance.website_id, False]])
+        domain.append("|")
+        domain.append(["website_id", "=", active_instance.website_id])
+        domain.append(["website_id", "=", False])
+        domain.append(["website_id", "=", [active_instance.website_id, False]])
         domain.append(["is_published", "=", True])
         domain_count = [["sale_ok", "=", True]]
         if active_instance.company_id and len(companies) > 1:
@@ -146,7 +151,8 @@ async def list_odoo_products_with_sync_status(
                 "weight",
                 "product_tag_ids",  # Tags del producto
                 "attribute_line_ids",
-                "product_variant_count"
+                "product_variant_count",
+                "is_published"
             ],
             limit=limit,
             offset=offset
@@ -337,6 +343,209 @@ async def batch_sync_products(
         logger.error(f"Error in batch sync: {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail=f"Batch sync error: {str(e)}")
+
+@router.post("/products/batch-sync/update-status", response_model=BatchSyncResponse)
+async def batch_sync_products_update_status(
+    request_data: BatchSyncRequest,
+    db: Session = Depends(get_db),
+    odoo: OdooClient = Depends(get_odoo_from_active_instance),
+    current_user: Admin = Depends(get_current_user)
+):
+    """
+    Update publish status of products in Odoo and WooCommerce.
+
+    This endpoint:
+    1. Looks up each product in the ProductSync table (intermediate model)
+    2. Updates is_published in Odoo using request_data.publish_product
+    3. Updates the status (publish/draft) in WooCommerce
+    4. Updates the ProductSync.published flag
+    5. Returns per-product results
+    """
+    try:
+        publish_value = request_data.publish_product
+        odoo_ids = request_data.odoo_ids
+        logger.info(
+            f"Starting publish status update for {len(odoo_ids)} products (publish={publish_value})")
+
+        # Authenticate with Odoo
+        uid = await odoo.odoo_authenticate()
+
+        # Obtener configuraciones de la instancia
+        instance_id = get_active_instance_id(db, current_user)
+        instance = crud_instance.get_active_instance(
+            db, user_id=current_user.id)
+        wc_config = {
+            "url": instance.woocommerce_url,
+            "consumer_key": instance.woocommerce_consumer_key,
+            "consumer_secret": instance.woocommerce_consumer_secret
+        }
+        wcapi = create_wc_api_client(wc_config)
+
+        results = []
+        updated_count = 0
+        for odoo_id in odoo_ids:
+            # Look up the intermediate model ProductSync that maps Odoo ID <-> WooCommerce ID
+            sync_record = db.query(ProductSync).filter(
+                ProductSync.odoo_id == odoo_id,
+                ProductSync.instance_id == instance_id
+            ).first()
+
+            if not sync_record:
+                logger.warning(
+                    f"No ProductSync record found for Odoo product {odoo_id}, skipping")
+                results.append({
+                    "odoo_id": odoo_id,
+                    "woocommerce_id": None,
+                    "name": None,
+                    "success": False,
+                    "action": "skipped",
+                    "message": "No sync record found in ProductSync"
+                })
+                continue
+
+            try:
+                # Update publish status in Odoo
+                odoo.write(
+                    model="product.template",
+                    vals={"is_published": publish_value},
+                    record_id=odoo_id
+                )
+                logger.info(
+                    f"Updated Odoo product {odoo_id} is_published={publish_value}")
+
+                # Update status in WooCommerce if a mapped ID exists
+                wc_status = "publish" if publish_value else "draft"
+                wc_message = "Publish status updated in Odoo"
+                if sync_record.woocommerce_id:
+                    wc_result = wc_request_with_logging(
+                        "PUT",
+                        f"products/{sync_record.woocommerce_id}",
+                        params={"status": wc_status},
+                        wcapi=wcapi
+                    )
+                    logger.info(
+                        f"Updated WooCommerce product {sync_record.woocommerce_id} status={wc_status}")
+                    wc_message = "Publish status updated in Odoo and WooCommerce"
+                else:
+                    logger.warning(
+                        f"ProductSync for Odoo {odoo_id} has no woocommerce_id, WooCommerce not updated")
+
+                # Persist the publish status in the intermediate model
+                sync_record.published = publish_value
+                sync_record.needs_sync = False
+                db.commit()
+
+                updated_count += 1
+                results.append({
+                    "odoo_id": odoo_id,
+                    "woocommerce_id": sync_record.woocommerce_id,
+                    "name": sync_record.odoo_name,
+                    "success": True,
+                    "action": "updated",
+                    "message": wc_message
+                })
+            except Exception as e:
+                db.rollback()
+                logger.error(
+                    f"Error updating publish status for Odoo product {odoo_id}: {e}",
+                    exc_info=True)
+                results.append({
+                    "odoo_id": odoo_id,
+                    "woocommerce_id": sync_record.woocommerce_id,
+                    "name": sync_record.odoo_name,
+                    "success": False,
+                    "action": "error",
+                    "message": str(e)
+                })
+
+        logger.info(
+            f"Publish status updated for {updated_count} products")
+        return BatchSyncResponse(
+            task_id=None,
+            status="completed",
+            total_products=len(results),
+            message=f"Publish status {'published' if publish_value else 'unpublished'} for {updated_count} products",
+            results=results
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in batch sync update status: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"Batch sync update status error: {str(e)}")
+
+
+@router.get("/products/{odoo_id}/woocommerce-detail")
+async def get_product_woocommerce_detail(
+    odoo_id: int,
+    db: Session = Depends(get_db),
+    current_user: Admin = Depends(get_current_user)
+):
+    """
+    Get the WooCommerce product detail for a given Odoo product ID.
+
+    Looks up the synchronized record in ProductSync to obtain the
+    WooCommerce ID and returns the full product detail from WooCommerce.
+    """
+    try:
+        instance_id = get_active_instance_id(db, current_user)
+        instance = crud_instance.get_active_instance(
+            db, user_id=current_user.id)
+
+        sync_record = db.query(ProductSync).filter(
+            ProductSync.odoo_id == odoo_id,
+            ProductSync.instance_id == instance_id
+        ).first()
+
+        if not sync_record:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No ProductSync record found for Odoo product {odoo_id}"
+            )
+
+        if not sync_record.woocommerce_id:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No WooCommerce ID mapped for Odoo product {odoo_id}"
+            )
+
+        wc_config = {
+            "url": instance.woocommerce_url,
+            "consumer_key": instance.woocommerce_consumer_key,
+            "consumer_secret": instance.woocommerce_consumer_secret
+        }
+        wcapi = create_wc_api_client(wc_config)
+
+        wc_product = wc_request_with_logging(
+            "GET",
+            f"products/{sync_record.woocommerce_id}",
+            wcapi=wcapi
+        )
+
+        if not wc_product:
+            raise HTTPException(
+                status_code=404,
+                detail=f"WooCommerce product {sync_record.woocommerce_id} not found"
+            )
+
+        return {
+            "odoo_id": odoo_id,
+            "woocommerce_id": sync_record.woocommerce_id,
+            "name": wc_product.get("name"),
+            "status": wc_product.get("status"),
+            "product": wc_product
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Error fetching WooCommerce detail for Odoo product {odoo_id}: {e}",
+            exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error fetching WooCommerce detail: {str(e)}")
 
 
 @router.get("/queue", response_model=SyncQueueResponse)

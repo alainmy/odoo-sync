@@ -120,7 +120,7 @@ async def create_instance(
             webhook = odoo_client.get_webhook_by_url(
                 url=odoo_webhook_url_template.format(host=settings.fast_api_host,
                                                      instance_id=instance_created.id))
-            webhook_odoo_url = "{host}/api/v1/webhook-receiver/odoo/action/{instance_id}/order.update"
+            webhook_odoo_url = "{host}/api/v1/webhook-receiver/odoo/action/{instance_id}/product.update"
             webhook = odoo_client.get_webhook_by_url(
                 url=webhook_odoo_url.format(host=settings.fast_api_host,
                                             instance_id=instance_created.id),
@@ -196,7 +196,7 @@ async def update_instance(
             webhook = odoo_client.get_webhook_by_url(
                 url=odoo_webhook_url_template.format(host=settings.fast_api_host,
                                                      instance_id=instance_id))
-            webhook_odoo_url = "{host}/api/v1/webhook-receiver/odoo/action/{instance_id}/order.update"
+            webhook_odoo_url = "{host}/api/v1/webhook-receiver/odoo/action/{instance_id}/product.update"
             webhook = odoo_client.get_webhook_by_url(
                 url=webhook_odoo_url.format(host=settings.fast_api_host,
                                             instance_id=instance_id),
@@ -241,7 +241,7 @@ async def delete_instance(
         uid = await odoo_client.odoo_authenticate()
         if uid:
             odoo_webhook_url_template = "{host}/api/v1/webhook-receiver/odoo/{instance_id}/order_update"
-            odoo_action_webhook_url_template = "{host}/api/v1/webhook-receiver/odoo/action/{instance_id}/order.update"
+            odoo_action_webhook_url_template = "{host}/api/v1/webhook-receiver/odoo/action/{instance_id}/product.update"
             webhook = odoo_client.get_webhook_by_url(
                 url=odoo_webhook_url_template.format(host=settings.fast_api_host,
                                                      instance_id=instance_id))
