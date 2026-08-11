@@ -260,7 +260,9 @@ async def batch_sync_products(
         modules = [module.get("name") for module in installed_modules if module["name"] in [
                     "product_dimension"]]
         if modules:
-            fields.append("product_height","product_length","product_width")
+            fields.append("product_height")
+            fields.append("product_length")
+            fields.append("product_width")
         odoo_response = await odoo.search_read(
             uid,
             "product.template",
