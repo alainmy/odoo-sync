@@ -159,10 +159,10 @@ def category_for_export(
             __logger__.info(
                 f"Downloaded image for category {image} from Odoo")
         category_data_wc = {
-                "name": category_data["name"],
-                "slug": slug,
-                "description": category_data.get("description", "")
-            }
+            "name": category_data["name"],
+            "slug": slug,
+            "description": category_data.get("description", "")
+        }
         if parent:
             # parent is already the woocommerce_id (int)
             category_data_wc["parent"] = parent
@@ -195,6 +195,31 @@ def category_for_export(
                     params=update_data,
                     wcapi=wcapi
                 )
+            elif not existing_in_woo:
+                __logger__.info(
+                    f"Category {category_data['name']} not found in WooCommerce, creating new")
+                __logger__.info(
+                    f"Creating category {category_data} in WooCommerce")
+                response = wc_request(
+                     "POST", "products/categories", params=category_data_wc, wcapi=wcapi
+                     )
+                wc_product_id = response["id"]
+
+                # CONFLICT VALIDATION AFTER CREATE: Verify newly created ID doesn't conflict
+                existing_mapping = db.query(CategorySync).filter(
+                       CategorySync.woocommerce_id == wc_product_id,
+                       CategorySync.instance_id == instance_id,
+                       CategorySync.odoo_id != category_data.get("id")
+                       ).first()
+
+                if existing_mapping:
+                    __logger__.error(
+                        f"CONFLICT AFTER CREATE: WooCommerce category ID {wc_product_id} already mapped to "
+                        f"Odoo category {existing_mapping.odoo_id}. New category created but cannot sync."
+                    )
+                    return None
+
+                woocommerce_id = wc_product_id
         else:
             # Create new category
             __logger__.info(

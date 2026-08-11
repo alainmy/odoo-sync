@@ -94,14 +94,14 @@ async def create_instance(
         # Get instaled modules
         installed_modules = odoo_client.get_installed_modules()
         modules = [module.get("name") for module in installed_modules if module["name"] in [
-            "sale_management", "stock", "account", "product", "website_sale","product_dimension"]]
+            "sale_management", "stock", "account", "product", "website_sale"]]
         if not modules:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="""This modules has to be installed in odoo: 
                 'sale_management',
                 'stock', 'account', 'product',
-                'website_sale', 'product_dimension' """
+                'website_sale' """
             )
         if not instance.category_from_product and 'website_sale' not in modules:
             raise HTTPException(
@@ -163,7 +163,7 @@ async def update_instance(
         # Get instaled modules
         installed_modules = odoo_client.get_installed_modules()
         modules = [module.get("name") for module in installed_modules if module["name"] in [
-            "sale_management", "stock", "account", "product", "website_sale","product_dimension"]]
+            "sale_management", "stock", "account", "product", "website_sale"]]
         if not modules:
             logger.error(f"Required modules are missing in Odoo instance \
                          {instance_id}. Required: 'sale_management', 'stock', 'account', 'product', 'website_sale'. Found: {modules}")
@@ -172,7 +172,7 @@ async def update_instance(
                 detail="""This modules has to be installed in odoo: 
                 'sale_management',
                 'stock', 'account', 'product',
-                'website_sale', 'product_dimension' """
+                'website_sale' """
             )
         if not instance_update.category_from_product and 'website_sale' not in modules:
             logger.error(

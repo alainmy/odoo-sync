@@ -230,11 +230,7 @@ async def batch_sync_products(
         uid = await odoo.odoo_authenticate()
 
         # Fetch products from Odoo
-        odoo_response = await odoo.search_read(
-            uid,
-            "product.template",
-            domain=[["id", "in", odoo_ids]],
-            fields=[
+        fields = [
                 "id",
                 "name",
                 "default_code",
@@ -259,7 +255,17 @@ async def batch_sync_products(
                 "product_width", # Campo de modulo de la OCA
                 'public_categ_ids',
                 "taxes_id",
-            ],
+            ]
+        installed_modules = odoo.get_installed_modules()
+        modules = [module.get("name") for module in installed_modules if module["name"] in [
+                    "product_dimension"]]
+        if modules:
+            fields.append("product_height","product_length","product_width")
+        odoo_response = await odoo.search_read(
+            uid,
+            "product.template",
+            domain=[["id", "in", odoo_ids]],
+            fields=fields,
             limit=len(odoo_ids)
         )
 
