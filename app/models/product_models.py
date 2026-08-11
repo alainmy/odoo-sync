@@ -40,9 +40,9 @@ class OdooProduct(BaseModel):
     volume: Optional[Decimal] = None
     
     # Dimensiones
-    ks_length: Optional[Decimal] = Field(None, description="Longitud")
-    ks_width: Optional[Decimal] = Field(None, description="Ancho")
-    ks_height: Optional[Decimal] = Field(None, description="Alto")
+    product_length: Optional[Decimal] = Field(None, description="Longitud")
+    product_width: Optional[Decimal] = Field(None, description="Ancho")
+    product_height: Optional[Decimal] = Field(None, description="Alto")
 
     # Tags
     product_tag_ids: Optional[List[Dict[str, Any]]] = Field(default_factory=list, description="Tags del producto")

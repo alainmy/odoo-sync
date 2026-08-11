@@ -254,6 +254,9 @@ async def batch_sync_products(
                 "product_template_image_ids",
                 "is_published",
                 "weight",
+                "product_height", # Campo de modulo de la OCA
+                "product_length", # Campo de modulo de la OCA
+                "product_width", # Campo de modulo de la OCA
                 'public_categ_ids',
                 "taxes_id",
             ],

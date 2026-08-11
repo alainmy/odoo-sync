@@ -342,11 +342,11 @@ def odoo_product_to_woocommerce(
     # Configurar dimensiones
     weight = str(odoo_product.weight) if odoo_product.weight else None
     dimensions = None
-    if odoo_product.ks_length or odoo_product.ks_width or odoo_product.ks_height:
+    if odoo_product.product_length or odoo_product.product_width or odoo_product.product_height:
         dimensions = {
-            "length": str(odoo_product.ks_length) if odoo_product.ks_length else "",
-            "width": str(odoo_product.ks_width) if odoo_product.ks_width else "",
-            "height": str(odoo_product.ks_height) if odoo_product.ks_height else ""
+            "length": str(odoo_product.product_length) if odoo_product.product_length else "",
+            "width": str(odoo_product.product_width) if odoo_product.product_width else "",
+            "height": str(odoo_product.product_height) if odoo_product.product_height else ""
         }
 
     # Prepare attributes for variable products
