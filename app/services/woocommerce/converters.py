@@ -166,7 +166,7 @@ def odoo_product_to_woocommerce(
     else:
         __logger__.info(f"Product {odoo_product.name} has NO tags")
     
-    if odoo_product.public_categ_ids and not instance.category_from_product:  
+    if odoo_product.public_categ_ids:  
         categ_sync = db.query(CategorySync).filter(
                         CategorySync.odoo_id in odoo_product.public_categ_ids
             ).all()
@@ -192,7 +192,7 @@ def odoo_product_to_woocommerce(
         type=product_type,
         regular_price=regular_price,
         description=odoo_product.description,
-        short_description=odoo_product.description_sale,
+        short_description=odoo_product.description_ecommerce,
         sku=odoo_product.default_code,
         slug=odoo_product.slug,
         manage_stock=manage_stock,
