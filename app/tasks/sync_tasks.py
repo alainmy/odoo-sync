@@ -702,14 +702,15 @@ def sync_product_to_woocommerce(
                 elif key == 'taxes_id':
                     # many2many field for taxes - keep as is for now
                     normalized_data[key] = value
-                elif key == 'public_categ_ids' and not instance.category_from_product:
+                elif key == 'public_categ_ids':
 
                     categ_sync = self.db.query(CategorySync).filter(
-                        CategorySync.odoo_id in value
+                        CategorySync.odoo_id.in_(value)
                     ).all()
                     values_dic = [{'id': item.woocommerce_id}
                                   for item in categ_sync]
                     normalized_data[key] = values_dic
+                    logger.info(f"Normalized {key} field: {values_dic}")
                 elif len(value) == 2 and isinstance(value[0], int):
                     # Other many2one fields [id, name] -> extract id only
                     normalized_data[key] = value[0]
@@ -847,6 +848,7 @@ def sync_product_to_woocommerce(
             product_attributes=product_attributes,
             odoo_client=odoo_client
         )
+        logger.info(f"DATA FOR WOOCOMMERCE: {wc_product_data}")
 
         # Create or update in WooCommerce
         result = create_or_update_woocommerce_product(

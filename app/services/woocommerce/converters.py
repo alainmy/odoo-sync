@@ -166,12 +166,10 @@ def odoo_product_to_woocommerce(
     else:
         __logger__.info(f"Product {odoo_product.name} has NO tags")
     
-    if odoo_product.public_categ_ids:  
-        categ_sync = db.query(CategorySync).filter(
-                        CategorySync.odoo_id in odoo_product.public_categ_ids
-            ).all()
-        values_dic = [{'id': item.woocommerce_id} for item in categ_sync]
-        categories = values_dic
+    if odoo_product.public_categ_ids:
+        categories = odoo_product.public_categ_ids
+        __logger__.info(f"Product {odoo_product.name} has {len(categories)} categories")
+        __logger__.info(f"Categories: {categories}")
     # Configure images
     images = None
     if odoo_product.image_urls:
