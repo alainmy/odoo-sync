@@ -238,6 +238,7 @@ async def batch_sync_products(
                 "write_date",
                 "description",
                 "description_sale",
+                "description_ecommerce",
                 "active",
                 "sale_ok",
                 "type",
@@ -311,7 +312,7 @@ async def batch_sync_products(
             # Convert product to dict and queue task
             # get url images
             if instance.product_descriptions == "description_sale":
-                product["description"] = product.pop("description_sale", "")
+                product["description"] = product.pop("description_ecommerce", "")
             product.update({
                 "is_published": request_data.publish_product
                 if request_data.publish_product is not None else False})

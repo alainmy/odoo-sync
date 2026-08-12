@@ -20,6 +20,7 @@ class OdooProduct(BaseModel):
     # Descripción y categoría
     description: Optional[str] = None
     description_sale: Optional[str] = None
+    description_ecommerce: Optional[str] = None
     categ_id: Optional[int] = None
     categ_name: Optional[str] = None
 
