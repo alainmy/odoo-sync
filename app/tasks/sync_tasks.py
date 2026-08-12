@@ -1755,7 +1755,9 @@ def sync_category_to_woocommerce(
             cat["id"]: {
                 "id": cat["id"],
                 "name": cat["name"],
-                "parent_id": cat["parent_id"][0] if cat["parent_id"] else None
+                "parent_id": cat["parent_id"][0] if cat["parent_id"] else None,
+                "website_description": cat["website_description"],
+                "sequence": cat["sequence"]
             }
             for cat in categories
         }
@@ -1962,6 +1964,7 @@ def sync_eco_category_to_woocommerce(
                 "parent_id": cat["parent_id"][0] if cat["parent_id"] else None,
                 "image_1920": cat["image_1920"],
                 "website_description": cat["website_description"],
+                "sequence": cat["sequence"],
             }
             for cat in categories
         }

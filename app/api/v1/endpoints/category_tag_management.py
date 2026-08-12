@@ -359,7 +359,8 @@ async def batch_sync_categories(
             if instance.category_from_product else ["id", "name",
                                                     "parent_id",
                                                     "display_name",
-                                                    "image_1920", "website_description"
+                                                    "image_1920", "website_description",
+                                                    "sequence"
                                                     ]
         )
         all_categories = odoo_response.get("result", [])
@@ -589,7 +590,7 @@ async def eco_batch_sync_categories(
             # domain=[],
             # domain=[["id", "in", request.ids]],
             fields=["id", "name", "complete_name", "parent_id",
-                    "image_1920", "website_description"]
+                    "image_1920", "website_description","sequence"]
         )
         all_categories = odoo_response.get("result", [])
         categories_filtered = [

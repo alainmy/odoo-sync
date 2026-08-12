@@ -161,7 +161,9 @@ def category_for_export(
         category_data_wc = {
             "name": category_data["name"],
             "slug": slug,
-            "description": category_data.get("description", "")
+            "description": category_data.get("description", ""),
+            "display": "both",
+            "menu_order": category_data.get("sequence", 0)
         }
         if parent:
             # parent is already the woocommerce_id (int)
@@ -186,7 +188,7 @@ def category_for_export(
                     __logger__.warning(
                         f"Could not fetch WC category {woocommerce_id}: {e}")
 
-            if existing_in_woo and category_data["name"] != existing_in_woo.get("name"):
+            if existing_in_woo:#and category_data["name"] != existing_in_woo.get("name"):
                 __logger__.info(
                     f"Updating category {category_data['name']} in WooCommerce (ID: {woocommerce_id})")
                 response = wc_request(
