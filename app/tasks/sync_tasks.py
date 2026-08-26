@@ -1495,7 +1495,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                             "product_uom_qty": 1,
                             "price_unit": shipping_line["total"],
                             "name": f"WC - Delivery - {shipping_line['method_title']}",
-                            "tax_id": odoo_taxes_ids
+                            "tax_id": odoo_taxes_ids if shipping_line.get("taxes") else []
                         }))
         # Validate that we have at least one order line
         if not order_lines and not existing_orders:
