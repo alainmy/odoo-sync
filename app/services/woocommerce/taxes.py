@@ -136,6 +136,25 @@ def sync_tax_to_woocommerce(
                 )
             except Exception as e:
                 __logger__.warning(f"Could not fetch WC tax {woocommerce_id}: {e}")
+                
+                # Buscar por nombre si no se encuentra por ID
+                try:
+                    existing_in_woo = wc_request(
+                        "GET",
+                        f"taxes",
+                        params={"limit": 100},
+                        wcapi=wcapi
+                    )
+                    if existing_in_woo:
+                        for t in existing_in_woo:
+                            if t.get("name", "").lower() == tax_name.lower():
+                                existing_in_woo = t
+                                woocommerce_id = t["id"]
+                                __logger__.info(
+                                    f"Found existing tax in WooCommerce by name: {woocommerce_id}")
+                                break
+                except Exception as e:
+                    __logger__.warning(f"Error searching existing tax: {e}")
 
             if existing_in_woo and existing_in_woo.get("rate") != str(tax_rate):
                 __logger__.info(
