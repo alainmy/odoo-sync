@@ -1599,7 +1599,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                         body=message
                     )
                     action = "existing"
-            elif order_state in ['sent', 'sale']:
+            elif order_state in ['sale']:
                 logger.info(
                     f"Order {order_id} is in '{order_state}' state. "
                     f"Attempting to update note and order lines only."
