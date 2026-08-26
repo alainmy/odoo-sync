@@ -145,8 +145,10 @@ def sync_tax_to_woocommerce(
                         params={"limit": 100},
                         wcapi=wcapi
                     )
+                    __logger__.info(f"Taxes found in WooCommerce: {existing_in_woo}")
                     if existing_in_woo:
                         for t in existing_in_woo:
+                            __logger__.info('Tax: %s', t)
                             if t.get("name", "").lower() == tax_name.lower():
                                 existing_in_woo = t
                                 woocommerce_id = t["id"]
