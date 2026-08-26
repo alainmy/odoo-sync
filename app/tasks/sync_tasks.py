@@ -1508,7 +1508,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             "completed": "sale",
             "on-hold": "draft",
             "processing": "sale",
-            "pending": "sent",
+            "pending": "draft",
             "cancelled": "cancel",
             "checkout-draft": "draft"
         }
