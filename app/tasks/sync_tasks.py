@@ -1476,7 +1476,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                         "product_uom_qty": int(line.get("quantity", 1)),
                         "price_unit": float(line.get("price", 0)),
                         "name": line.get("name", "Product"),
-                        "tax_id": odoo_taxes_ids
+                        "tax_id": odoo_taxes_ids if odoo_taxes_ids else [instance.tax_included_id],
                     }))
             # Buscar  producto de de delivery in odoo
             delivery = client.search_read_sync(
@@ -1489,13 +1489,17 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                 delivery = delivery[0]
                 shipping_lines = order_data["shipping_lines"]
                 if shipping_lines:
+                    taxes_sync_0 = self.db.query(TaxSync).filter(
+                                        TaxSync.odoo_name == "IVA 0%",
+                                        TaxSync.instance_id == instance_id
+                                    ).first()
                     for shipping_line in shipping_lines:
                         order_lines.append((0, 0, {
                             "product_id": delivery["id"],
                             "product_uom_qty": 1,
                             "price_unit": shipping_line["total"],
                             "name": f"WC - Delivery - {shipping_line['method_title']}",
-                            "tax_id": odoo_taxes_ids if shipping_line.get("taxes") else []
+                            "tax_id": odoo_taxes_ids if shipping_line.get("taxes") else [instance.tax_included_id] if instance.tax_included_id else [taxes_sync_0.odoo_id] if taxes_sync_0 else [],
                         }))
         # Validate that we have at least one order line
         if not order_lines and not existing_orders:

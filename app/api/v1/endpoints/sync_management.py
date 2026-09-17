@@ -749,6 +749,7 @@ async def get_sync_statistics(
 
 @router.get("/taxes", response_model=OdooTaxListResponse)
 async def list_odoo_taxes_with_sync_status(
+    only_included: bool = Query(None, description="Include taxes included in pricelist"),
     limit: int = Query(50, le=200, description="Number of taxes to return"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
     filter_status: Optional[str] = Query(
@@ -775,6 +776,8 @@ async def list_odoo_taxes_with_sync_status(
         domain = [["type_tax_use", "=", "sale"],
                   ["amount_type", "=", "percent"],
                   ["active", "=", True]]
+        if only_included:
+            domain.append(["price_include_override", "=", "tax_included"])
         if search:
             domain.append(["name", "ilike", search])
 
