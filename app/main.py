@@ -1,7 +1,6 @@
 from contextlib import asynccontextmanager
 import json
 import logging
-import os
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from app.api.v1.endpoints.admin_endpoint import router as admin_router
@@ -25,6 +24,7 @@ from app.api.v1.endpoints.wensites import router as odoo_websites_router
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.session import get_session, create_session, lifespan
+from app.core.config import settings
 _logger = logging.getLogger(__name__)
 
 # Cliente global
@@ -46,7 +46,7 @@ origins = [
     "http://localhost:3000",
     "http://localhost:3007",
     "https://alinea.cumbre.ar",
-    os.getenv("FRONTEND_URL", "http://frontend.localhost"),
+    settings.frontend_url.rstrip("/"),
 ]
 
 app.add_middleware(

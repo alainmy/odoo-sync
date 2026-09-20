@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     fastapi_secret_key: str = "supersecretkey"
     fastapi_debug: bool = True
     fast_api_host: str = "http://localhost:8000"
+    frontend_url: str = "http://frontend.localhost"
     postgres_user: str = "fastapi_user"
     postgres_password: str = "Fastadmin123*"
     postgres_root_password: str = "root_password_123"
@@ -117,7 +118,7 @@ class Settings(BaseSettings):
     mysql_root_password: str = "root_password"
 
     class Config:
-        env_file = "./.env"
+        env_file = None
 
 
 settings = Settings()
