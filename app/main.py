@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 import json
 import logging
+import os
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from app.api.v1.endpoints.admin_endpoint import router as admin_router
@@ -44,7 +45,8 @@ origins = [
     "http://localhost",
     "http://localhost:3000",
     "http://localhost:3007",
-    "https://alinea.cumbre.ar"
+    "https://alinea.cumbre.ar",
+    os.getenv("FRONTEND_URL", "http://frontend.localhost"),
 ]
 
 app.add_middleware(
