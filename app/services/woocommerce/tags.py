@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from woocommerce import API
 
 from app.models.admin import TagSync
-from app.services.woocommerce.client import wc_request
+from app.services.woocommerce.client import wc_request, wc_request_with_logging
 
 __logger__ = logging.getLogger(__name__)
 
@@ -73,6 +73,20 @@ def manage_tags_for_export(
                     data.append({"id": found_tag["id"]})
                     __logger__.info(f"Tag found: {tag_name} (ID: {found_tag['id']})")
                     
+                    #update tag in woocommerce
+                    if found_tag["name"] != tag_name:
+                        found_tag["name"] = tag_name
+                        found_tag["slug"] = slug
+                        response = wc_request_with_logging(
+                            "PUT",
+                            f"products/tags/{found_tag['id']}",
+                            params=found_tag,
+                            wcapi=wcapi
+                        )
+                        if response:
+                            __logger__.info(f"Tag updated: {tag_name} (ID: {found_tag['id']})")
+                        else:
+                            __logger__.error(f"Failed to update tag: {tag_name} (ID: {found_tag['id']})")
                     # Save record for existing tag if not already registered
                     if db and tag.get("id"):
                         try:

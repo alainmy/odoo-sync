@@ -729,6 +729,8 @@ async def list_odoo_tags_with_sync_status(
                 sync_status = "never_synced"
             elif sync_record.error:
                 sync_status = "error"
+            elif sync_record.odoo_name != tag.get("name", ""):
+                sync_status = "needs_sync"
             else:
                 sync_status = "synced"
 
