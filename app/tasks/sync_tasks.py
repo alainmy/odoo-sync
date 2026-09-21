@@ -957,6 +957,20 @@ def full_product_sync_wc_to_odoo(
         logger.info(
             f"Starting full product sync: WooCommerce -> Odoo (instance {instance_id})")
 
+        instance = self.db.query(WooCommerceInstance).filter(
+            WooCommerceInstance.id == instance_id
+        ).first()
+        if not instance or not instance.auto_sync_products:
+            logger.info(
+                f"Skipping product sync for instance {instance_id}: "
+                "auto_sync_products is disabled"
+            )
+            return {
+                "success": True,
+                "status": "skipped",
+                "reason": "auto_sync_products_disabled"
+            }
+
         # Use default config if not provided
         if not odoo_config:
             odoo_config = {
@@ -1082,6 +1096,20 @@ def full_order_sync_wc_to_odoo(
     try:
         logger.info(
             f"Starting full order sync: WooCommerce -> Odoo (instance {instance_id})")
+
+        instance = self.db.query(WooCommerceInstance).filter(
+            WooCommerceInstance.id == instance_id
+        ).first()
+        if not instance or not instance.auto_sync_orders:
+            logger.info(
+                f"Skipping order sync for instance {instance_id}: "
+                "auto_sync_orders is disabled"
+            )
+            return {
+                "success": True,
+                "status": "skipped",
+                "reason": "auto_sync_orders_disabled"
+            }
 
         # Use default config if not provided
         if not odoo_config:

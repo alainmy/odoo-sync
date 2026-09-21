@@ -63,7 +63,7 @@ def schedule_multi_instance_product_sync(self) -> Dict[str, Any]:
         # Get repository
         instance_repo = InstanceRepository(self.db)
 
-        # Get all active instances with auto_sync enabled
+        # Get all active instances and apply the product sync switch per instance
         active_instances = instance_repo.get_active_instances()
 
         total_instances = len(active_instances)
@@ -201,7 +201,7 @@ def schedule_multi_instance_order_sync(self) -> Dict[str, Any]:
         Dict with scheduling statistics
     """
     try:
-        logger.info("Starting multi-instance product sync scheduler")
+        logger.info("Starting multi-instance order sync scheduler")
 
         # Get repository
         instance_repo = InstanceRepository(self.db)
@@ -219,11 +219,11 @@ def schedule_multi_instance_order_sync(self) -> Dict[str, Any]:
 
         for instance in active_instances:
             try:
-                # Check if auto_sync_products is enabled for this instance
-                if not instance.auto_sync_products:
+                # Check if auto_sync_orders is enabled for this instance
+                if not instance.auto_sync_orders:
                     logger.info(
                         f"Skipping instance {instance.id} ({instance.name}): "
-                        f"auto_sync_products is disabled"
+                        f"auto_sync_orders is disabled"
                     )
                     skipped_count += 1
                     continue
@@ -295,7 +295,7 @@ def schedule_multi_instance_order_sync(self) -> Dict[str, Any]:
                 )
                 # Send alert for critical errors
                 send_task_error_alert(
-                    task_name='schedule_multi_instance_product_sync',
+                    task_name='schedule_multi_instance_order_sync',
                     error=e,
                     task_id=self.request.id,
                     instance_id=instance.id,
