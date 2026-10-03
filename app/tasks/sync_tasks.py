@@ -1536,7 +1536,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                             "product_uom_qty": 1,
                             "price_unit": shipping_line["total"],
                             "name": f"WC - Delivery - {shipping_line['method_title']}",
-                            "tax_id": {(6, 0, taxs)}
+                            "tax_id": [(6, 0, taxs)],                        
                         }))
                         logger.info(f"Added delivery {order_lines}")
         # Validate that we have at least one order line
