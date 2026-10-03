@@ -1521,12 +1521,22 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                                         TaxSync.instance_id == instance_id
                                     ).first()
                     for shipping_line in shipping_lines:
+                        taxs = []
+                        if shipping_line.get("taxes"):
+                            taxs = [int(t) for t in odoo_taxes_ids]          # asegura ints
+                        elif instance.tax_included_id:
+                            taxs = [instance.tax_included_id.id]             # Many2one → .id
+                        elif taxes_sync_0 and taxes_sync_0.odoo_id:
+                            taxs = [int(taxes_sync_0.odoo_id)]
+                        else:
+                            taxs = []
+
                         order_lines.append((0, 0, {
                             "product_id": delivery["id"],
                             "product_uom_qty": 1,
                             "price_unit": shipping_line["total"],
                             "name": f"WC - Delivery - {shipping_line['method_title']}",
-                            "tax_id": odoo_taxes_ids if shipping_line.get("taxes") else [instance.tax_included_id] if instance.tax_included_id else [taxes_sync_0.odoo_id] if taxes_sync_0 else [],
+                            "tax_id": {(6, 0, taxs)}
                         }))
                         logger.info(f"Added delivery {order_lines}")
         # Validate that we have at least one order line
