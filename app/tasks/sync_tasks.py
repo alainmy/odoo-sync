@@ -1440,6 +1440,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             instance.odoo_password
         )
         if existing_orders and existing_orders[0]['state'] == 'draft':
+            logger.info(f"Updating existing draft order with ID: {existing_orders[0]['id']}")
             order_client.write(
                 model='sale.order',
                 vals={
@@ -1707,6 +1708,10 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             order_id = order_client.create(
                 model="sale.order", vals=sale_order_data)
             if sale_order_data["state"] == "completed" or sale_order_data["state"] == "processing":
+                
+                logger.info(
+                    f"Confirming order {order_id} in Odoo as it is in '{sale_order_data['state']}' state."
+                )
                 order_client.cal_method(
                     model='sale.order',
                     metod='action_confirm',
@@ -1716,7 +1721,9 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                 f"Created new sale order in Odoo with ID {order_id}")
             # if confirm order in Odoo if status is processing or completed create a invoice
             if sale_order_data["state"] == "completed" or sale_order_data["state"] == "processing":
-
+                logger.info(
+                    f"Creating invoice for order {order_id} in Odoo as it is in '{sale_order_data['state']}' state."
+                )
                 # Create a regular invoice for the order
                 invoice, order_d = order_client.create_invoice(
                     order_id=order_id,
