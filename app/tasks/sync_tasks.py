@@ -1459,9 +1459,9 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                 taxes_sync = self.db.query(TaxSync).filter(
                     TaxSync.instance_id == instance_id
                 ).all()
-                logger.info(f"Taxes sync: {taxes_sync}")
+                logger.info(f"Taxes sync: with woo_id: {[t.woocommerce_id for t in taxes_sync]}")
                 odoo_taxes_ids = [
-                    t.odoo_id for t in taxes_sync if t.woocommerce_id in taxes_ids] if taxes_sync else []
+                    t.odoo_id for t in taxes_sync if t.woocommerce_id in taxes_ids]
                 logger.info(f"Odoo taxes ids: {odoo_taxes_ids}")
                 # Try to find product by sync record first
                 product_sync = None
