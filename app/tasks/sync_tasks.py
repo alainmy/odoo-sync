@@ -1457,12 +1457,11 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                     taxes_ids = [t.get("id") for t in line.get("taxes")]
                 logger.info(f"Taxes ids: {taxes_ids}")
                 taxes_sync = self.db.query(TaxSync).filter(
-                    TaxSync.woocommerce_id.in_(taxes_ids),
                     TaxSync.instance_id == instance_id
                 ).all()
                 logger.info(f"Taxes sync: {taxes_sync}")
                 odoo_taxes_ids = [
-                    t.odoo_id for t in taxes_sync] if taxes_sync else []
+                    t.odoo_id for t in taxes_sync if t.woocommerce_id in taxes_ids] if taxes_sync else []
                 logger.info(f"Odoo taxes ids: {odoo_taxes_ids}")
                 # Try to find product by sync record first
                 product_sync = None
@@ -1529,6 +1528,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                             "name": f"WC - Delivery - {shipping_line['method_title']}",
                             "tax_id": odoo_taxes_ids if shipping_line.get("taxes") else [instance.tax_included_id] if instance.tax_included_id else [taxes_sync_0.odoo_id] if taxes_sync_0 else [],
                         }))
+                        logger.info(f"Added delivery {order_lines}")
         # Validate that we have at least one order line
         if not order_lines and not existing_orders:
             logger.warning(
