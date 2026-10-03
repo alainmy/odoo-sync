@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timedelta
 from pydantic import BaseModel
+import logging
 
 from app.db.session import get_db
 from app.repositories import (
@@ -18,9 +19,10 @@ from app.repositories import (
 )
 from app.auth.oauth2 import get_current_user
 from app.models.admin import Admin, WebhookLog
-from app.utils.instance_helpers import get_active_instance_id
+from app.utils.instance_helpers import get_active_instance_id, get_active_instance
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # ==================== Schemas ====================
@@ -73,6 +75,8 @@ class ProductSyncResponse(BaseModel):
     error_details: Optional[str]
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
+    instance_id: Optional[int] = None
+    instance_name: Optional[str] = None
     
     class Config:
         from_attributes = True
@@ -90,6 +94,8 @@ class CategorySyncResponse(BaseModel):
     error: bool
     message: str
     error_details: Optional[str]
+    instance_id: Optional[int] = None
+    instance_name: Optional[str] = None
     
     class Config:
         from_attributes = True
@@ -107,6 +113,8 @@ class TagSyncResponse(BaseModel):
     error: bool
     message: str
     error_details: Optional[str]
+    instance_id: Optional[int] = None
+    instance_name: Optional[str] = None
     
     class Config:
         from_attributes = True
@@ -131,9 +139,23 @@ class TaxSyncResponse(BaseModel):
     message: str
     error_details: Optional[str]
     last_synced_at: Optional[datetime]
+    instance_id: Optional[int] = None
+    instance_name: Optional[str] = None
     
     class Config:
         from_attributes = True
+
+
+class BulkDeleteRequest(BaseModel):
+    """Petición de borrado en lote"""
+    ids: List[int]
+
+
+class DeleteSyncResponse(BaseModel):
+    """Respuesta de operación de borrado"""
+    status: str
+    deleted_count: int
+    message: str
 
 
 class SyncStatisticsResponse(BaseModel):
@@ -506,4 +528,111 @@ async def get_sync_statistics(
         tasks={"total": 0},  # Task stats don't have a specific method yet
         products=product_stats,
         categories=category_stats
+    )
+
+
+# ==================== Delete endpoints ====================
+
+_SYNC_REPOS = {
+    "products": ProductSyncRepository,
+    "categories": CategorySyncRepository,
+    "tags": TagSyncRepository,
+    "taxes": TaxSyncRepository,
+}
+
+_ENTITY_LABELS = {
+    "products": "product sync records",
+    "categories": "category sync records",
+    "tags": "tag sync records",
+    "taxes": "tax sync records",
+}
+
+
+@router.delete("/{entity}", response_model=DeleteSyncResponse)
+async def delete_all_syncs(
+    entity: str,
+    db: Session = Depends(get_db),
+    current_user: Admin = Depends(get_current_user)
+):
+    """
+    Eliminar TODOS los registros de sincronización de un tipo
+    (products, categories, tags, taxes) para la instancia activa.
+    """
+    if entity not in _SYNC_REPOS:
+        raise HTTPException(status_code=404, detail=f"Entidad desconocida: {entity}")
+
+    instance_id = get_active_instance_id(db, current_user)
+    repo = _SYNC_REPOS[entity](db)
+    deleted = repo.delete_all_syncs(instance_id)
+
+    logger.info(
+        f"Deleted {deleted} {_ENTITY_LABELS[entity]} for instance_id={instance_id}")
+
+    return DeleteSyncResponse(
+        status="success",
+        deleted_count=deleted,
+        message=f"Se eliminaron {deleted} registros de sincronización"
+    )
+
+
+@router.post("/{entity}/bulk-delete", response_model=DeleteSyncResponse)
+async def bulk_delete_syncs(
+    entity: str,
+    request: BulkDeleteRequest,
+    db: Session = Depends(get_db),
+    current_user: Admin = Depends(get_current_user)
+):
+    """
+    Eliminar en lote registros de sincronización de un tipo
+    (products, categories, tags, taxes) para la instancia activa.
+    """
+    if entity not in _SYNC_REPOS:
+        raise HTTPException(status_code=404, detail=f"Entidad desconocida: {entity}")
+
+    instance_id = get_active_instance_id(db, current_user)
+    repo = _SYNC_REPOS[entity](db)
+    deleted = repo.delete_syncs_bulk(request.ids, instance_id)
+
+    logger.info(
+        f"Deleted {deleted}/{len(request.ids)} {_ENTITY_LABELS[entity]} "
+        f"for instance_id={instance_id}")
+
+    return DeleteSyncResponse(
+        status="success",
+        deleted_count=deleted,
+        message=f"Se eliminaron {deleted} de {len(request.ids)} registros solicitados"
+    )
+
+
+@router.delete("/{entity}/{sync_id}", response_model=DeleteSyncResponse)
+async def delete_sync(
+    entity: str,
+    sync_id: int,
+    db: Session = Depends(get_db),
+    current_user: Admin = Depends(get_current_user)
+):
+    """
+    Eliminar un registro individual de sincronización (por su ID de registro)
+    de un tipo (products, categories, tags, taxes) para la instancia activa.
+    """
+    if entity not in _SYNC_REPOS:
+        raise HTTPException(status_code=404, detail=f"Entidad desconocida: {entity}")
+
+    instance_id = get_active_instance_id(db, current_user)
+    repo = _SYNC_REPOS[entity](db)
+    deleted = repo.delete_sync(sync_id, instance_id)
+
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Registro de sincronización {sync_id} no encontrado"
+        )
+
+    logger.info(
+        f"Deleted {_ENTITY_LABELS[entity]} id={sync_id} for instance_id={instance_id}")
+
+    return DeleteSyncResponse(
+        status="success",
+        deleted_count=1,
+        message="Registro de sincronización eliminado correctamente"
     )

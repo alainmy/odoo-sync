@@ -62,6 +62,10 @@ class AttributeSync(Base):
     # Relaciones
     instance = relationship("WooCommerceInstance")
 
+    @property
+    def instance_name(self):
+        return self.instance.name if self.instance else None
+
     # Timestamps
     sync_date = Column(DateTime, nullable=True)  # Última modificación
     # Última exportación exitosa

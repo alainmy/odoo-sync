@@ -173,6 +173,8 @@ class AttributeSyncStatus(BaseModel):
     sync_date: Optional[datetime] = None
     last_exported_date: Optional[datetime] = None
     need_update: bool
+    instance_id: Optional[int] = None
+    instance_name: Optional[str] = None
 
     class Config:
         from_attributes = True

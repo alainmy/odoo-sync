@@ -294,3 +294,70 @@ class AttributeSyncRepository:
             )
         ).count()
 
+    # ==================== DELETE ====================
+
+    def _delete_values_for_attributes(self, syncs: List[AttributeSync]) -> int:
+        """Delete value sync records associated with the given attribute syncs"""
+        woo_attr_ids = [
+            sync.woocommerce_id for sync in syncs
+            if sync.woocommerce_id is not None
+        ]
+        if not woo_attr_ids:
+            return 0
+        instance_ids = {sync.instance_id for sync in syncs}
+        deleted = 0
+        for instance_id in instance_ids:
+            deleted += self.db.query(AttributeValueSync).filter(
+                AttributeValueSync.instance_id == instance_id,
+                AttributeValueSync.woocommerce_attribute_id.in_(woo_attr_ids)
+            ).delete(synchronize_session=False)
+        return deleted
+
+    def delete_attribute_sync(self, sync_id: int, instance_id: int) -> bool:
+        """
+        Delete a single attribute sync record (and its value syncs),
+        ensuring it belongs to the given instance.
+        """
+        sync = self.db.query(AttributeSync).filter(
+            AttributeSync.id == sync_id,
+            AttributeSync.instance_id == instance_id
+        ).first()
+
+        if not sync:
+            return False
+
+        self._delete_values_for_attributes([sync])
+        self.db.delete(sync)
+        self.db.commit()
+        return True
+
+    def delete_attribute_syncs_bulk(self, ids: List[int], instance_id: int) -> int:
+        """Delete multiple attribute sync records (and their value syncs)"""
+        if not ids:
+            return 0
+        syncs = self.db.query(AttributeSync).filter(
+            AttributeSync.id.in_(ids),
+            AttributeSync.instance_id == instance_id
+        ).all()
+
+        if not syncs:
+            return 0
+
+        self._delete_values_for_attributes(syncs)
+        for sync in syncs:
+            self.db.delete(sync)
+        self.db.commit()
+        return len(syncs)
+
+    def delete_all_attribute_syncs(self, instance_id: int) -> int:
+        """Delete all attribute sync records (and their value syncs) for an instance"""
+        self.db.query(AttributeValueSync).filter(
+            AttributeValueSync.instance_id == instance_id
+        ).delete(synchronize_session=False)
+
+        deleted = self.db.query(AttributeSync).filter(
+            AttributeSync.instance_id == instance_id
+        ).delete(synchronize_session=False)
+        self.db.commit()
+        return deleted
+

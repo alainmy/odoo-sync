@@ -48,6 +48,12 @@ class CategorySync(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
+    instance = relationship("WooCommerceInstance")
+
+    @property
+    def instance_name(self):
+        return self.instance.name if self.instance else None
+
 
 class TagSync(Base):
     __tablename__ = "tag_sync"
@@ -83,6 +89,12 @@ class TagSync(Base):
     # Audit timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    instance = relationship("WooCommerceInstance")
+
+    @property
+    def instance_name(self):
+        return self.instance.name if self.instance else None
 
 
 class ProductSync(Base):
@@ -126,6 +138,12 @@ class ProductSync(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     variants = relationship('ProductVariantSync')
+
+    instance = relationship("WooCommerceInstance")
+
+    @property
+    def instance_name(self):
+        return self.instance.name if self.instance else None
 
 
 class ProductVariantSync(Base):

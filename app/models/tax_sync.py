@@ -41,3 +41,9 @@ class TaxSync(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    instance = relationship("WooCommerceInstance")
+
+    @property
+    def instance_name(self):
+        return self.instance.name if self.instance else None

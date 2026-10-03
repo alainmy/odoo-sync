@@ -11,6 +11,7 @@ Endpoints:
 import time
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
@@ -282,6 +283,7 @@ async def get_attribute_syncs(
         AttributeSyncStatus(
             id=sync.id,
             odoo_attribute_id=sync.odoo_attribute_id,
+            odoo_name=sync.odoo_name,
             attribute_name=None,  # Se podría obtener de Odoo si es necesario
             woocommerce_id=sync.woocommerce_id,
             slug=sync.slug,
@@ -292,10 +294,122 @@ async def get_attribute_syncs(
             message=sync.message,
             sync_date=sync.sync_date,
             last_exported_date=sync.last_exported_date,
-            need_update=sync.need_update
+            need_update=sync.need_update,
+            instance_id=sync.instance_id,
+            instance_name=sync.instance_name
         )
         for sync in syncs
     ]
+
+
+# ==================== DELETE SYNC RECORDS ====================
+
+class BulkDeleteRequest(BaseModel):
+    """Petición de borrado en lote"""
+    ids: List[int]
+
+
+class DeleteSyncResponse(BaseModel):
+    """Respuesta de operación de borrado"""
+    status: str
+    deleted_count: int
+    message: str
+
+
+@router.delete("/syncs", response_model=DeleteSyncResponse)
+async def delete_all_attribute_syncs(
+    db: Session = Depends(get_db),
+    current_user: Admin = Depends(get_current_user)
+):
+    """
+    Eliminar TODOS los registros de sincronización de atributos
+    (y sus valores) de la instancia activa.
+    """
+    instance = crud_instance.get_active_instance(db, user_id=current_user.id)
+    if not instance:
+        raise HTTPException(
+            status_code=404,
+            detail="No hay ninguna instancia activa"
+        )
+
+    repo = AttributeSyncRepository(db)
+    deleted = repo.delete_all_attribute_syncs(instance.id)
+
+    _logger.info(
+        f"Deleted {deleted} attribute sync records for instance_id={instance.id}")
+
+    return DeleteSyncResponse(
+        status="success",
+        deleted_count=deleted,
+        message=f"Se eliminaron {deleted} registros de sincronización"
+    )
+
+
+@router.post("/syncs/bulk-delete", response_model=DeleteSyncResponse)
+async def bulk_delete_attribute_syncs(
+    request: BulkDeleteRequest,
+    db: Session = Depends(get_db),
+    current_user: Admin = Depends(get_current_user)
+):
+    """
+    Eliminar en lote registros de sincronización de atributos
+    (y sus valores) de la instancia activa.
+    """
+    instance = crud_instance.get_active_instance(db, user_id=current_user.id)
+    if not instance:
+        raise HTTPException(
+            status_code=404,
+            detail="No hay ninguna instancia activa"
+        )
+
+    repo = AttributeSyncRepository(db)
+    deleted = repo.delete_attribute_syncs_bulk(request.ids, instance.id)
+
+    _logger.info(
+        f"Deleted {deleted}/{len(request.ids)} attribute sync records "
+        f"for instance_id={instance.id}")
+
+    return DeleteSyncResponse(
+        status="success",
+        deleted_count=deleted,
+        message=f"Se eliminaron {deleted} de {len(request.ids)} registros solicitados"
+    )
+
+
+@router.delete("/syncs/{sync_id}", response_model=DeleteSyncResponse)
+async def delete_attribute_sync(
+    sync_id: int,
+    db: Session = Depends(get_db),
+    current_user: Admin = Depends(get_current_user)
+):
+    """
+    Eliminar un registro individual de sincronización de atributo
+    (y sus valores) por su ID de registro, de la instancia activa.
+    """
+    instance = crud_instance.get_active_instance(db, user_id=current_user.id)
+    if not instance:
+        raise HTTPException(
+            status_code=404,
+            detail="No hay ninguna instancia activa"
+        )
+
+    repo = AttributeSyncRepository(db)
+    deleted = repo.delete_attribute_sync(sync_id, instance.id)
+
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Registro de sincronización {sync_id} no encontrado"
+        )
+
+    _logger.info(
+        f"Deleted attribute sync id={sync_id} for instance_id={instance.id}")
+
+    return DeleteSyncResponse(
+        status="success",
+        deleted_count=1,
+        message="Registro de sincronización eliminado correctamente"
+    )
 
 
 @router.get("/syncs/{odoo_attribute_id}", response_model=AttributeSyncStatus)

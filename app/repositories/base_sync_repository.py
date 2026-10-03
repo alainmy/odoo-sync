@@ -188,3 +188,57 @@ class BaseSyncRepository(Generic[T]):
             self.db.refresh(sync)
         
         return sync
+
+    def delete_sync(self, sync_id: int, instance_id: int) -> bool:
+        """
+        Delete a single sync record, ensuring it belongs to the given instance.
+
+        Args:
+            sync_id: Sync record ID
+            instance_id: WooCommerce instance ID
+
+        Returns:
+            True if the record was deleted, False if not found
+        """
+        deleted = self.db.query(self.model_class).filter(
+            self.model_class.id == sync_id,
+            self.model_class.instance_id == instance_id
+        ).delete(synchronize_session=False)
+        self.db.commit()
+        return deleted > 0
+
+    def delete_syncs_bulk(self, ids: List[int], instance_id: int) -> int:
+        """
+        Delete multiple sync records, restricted to the given instance.
+
+        Args:
+            ids: List of sync record IDs
+            instance_id: WooCommerce instance ID
+
+        Returns:
+            Number of deleted records
+        """
+        if not ids:
+            return 0
+        deleted = self.db.query(self.model_class).filter(
+            self.model_class.id.in_(ids),
+            self.model_class.instance_id == instance_id
+        ).delete(synchronize_session=False)
+        self.db.commit()
+        return deleted
+
+    def delete_all_syncs(self, instance_id: int) -> int:
+        """
+        Delete all sync records for the given instance.
+
+        Args:
+            instance_id: WooCommerce instance ID
+
+        Returns:
+            Number of deleted records
+        """
+        deleted = self.db.query(self.model_class).filter(
+            self.model_class.instance_id == instance_id
+        ).delete(synchronize_session=False)
+        self.db.commit()
+        return deleted
