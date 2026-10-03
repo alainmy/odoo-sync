@@ -1525,7 +1525,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                         if shipping_line.get("taxes"):
                             taxs = [int(t) for t in odoo_taxes_ids]          # asegura ints
                         elif instance.tax_included_id:
-                            taxs = [instance.tax_included_id.id]             # Many2one → .id
+                            taxs = [instance.tax_included_id]             # Many2one → .id
                         elif taxes_sync_0 and taxes_sync_0.odoo_id:
                             taxs = [int(taxes_sync_0.odoo_id)]
                         else:
