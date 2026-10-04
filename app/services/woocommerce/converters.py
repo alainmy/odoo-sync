@@ -69,12 +69,19 @@ def manage_price_list_for_export(
     price_service = PricelistService(db)
     if instance.price_list:
         __logger__.info(f"Instance {instance_id} has price list configured: {instance.price_list.odoo_pricelist_id}. Calculating price for product {product_id}...")
-        price = price_service.get_odoo_product_price(
-            odoo_client=odoo_client,  # Not needed for price calculation
-            product_id=product_id,
-            product_tmpl_id=product_tmpl_id,
+        # price = price_service.get_odoo_product_price(
+        #     odoo_client=odoo_client,  # Not needed for price calculation
+        #     product_id=product_id,
+        #     product_tmpl_id=product_tmpl_id,
+        #     pricelist_id=instance.price_list.odoo_pricelist_id
+        # )
+        prices = odoo_client.get_contextual_prices(
+            model="product.product",
+            record_ids=[product_id],
             pricelist_id=instance.price_list.odoo_pricelist_id
         )
+        __logger__.info(f"Contextual prices for product {product_id}: {prices}")
+        price = prices[product_id]
         __logger__.info(f"Calculated price for product {product_id} using pricelist {instance.price_list.odoo_pricelist_id}: {price}")
         return price
     __logger__.info(f"No price list configured for instance {instance_id}, using product list price")

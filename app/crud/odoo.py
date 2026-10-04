@@ -17,6 +17,10 @@ ODOO_DB = "c4e"
 ODOO_USERNAME = "admin"
 ODOO_PASSWORD = "admin"
 
+class OdooConnectionError(Exception):
+    """Raised when Odoo connection fails (timeout, connection refused, etc.)."""
+    pass
+
 
 class OdooClient:
 
@@ -602,3 +606,51 @@ if action:
         except Exception as e:
             logger.error(f"Error in delete_webhook: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
+    
+    def get_contextual_prices(self, model: str, record_ids: list, pricelist_id: int) -> dict:
+        """Precio por tarifa vía el método público get_contextual_price.
+
+        Odoo bloquea los métodos privados (_get_product_price / _compute_price_rule)
+        por XML-RPC, pero product.template/product.product exponen get_contextual_price
+        que resuelve la tarifa indicada en context={'pricelist': id} y devuelve el
+        precio convertido a la moneda de esa tarifa.
+
+        Devuelve {record_id: price}. Es una llamada por registro (get_contextual_price
+        usa ensure_one internamente), por eso solo se usa cuando hay pricelist_id.
+        """
+        if not record_ids or not pricelist_id:
+            return {}
+        prices = {}
+        for record_id in record_ids:
+            try:
+                self.context.update({"pricelist": pricelist_id})
+                payload = {
+                            "jsonrpc": "2.0",
+                            "method": "call",
+                            "params": {
+                                "service": "object",
+                                "method": "execute_kw",
+                                "args": [
+                                    self.db,
+                                    self.uid,
+                                    self.password,
+                                    model,
+                                    'get_contextual_price',
+                                    [[record_id]],
+                                    {"context": self.context}
+                                ],
+                            },
+                            "id": 9
+                        }
+                response = requests.post(f"{self.url}/jsonrpc", json=payload)
+                result = response.json()
+                if result.get("error"):
+                    logger.error(f"Odoo get_contextual_price error: {result['error']}")
+                    raise RuntimeError(result["error"])
+                price = result.get("result", None)
+                prices[record_id] = float(price) if price is not None else None
+            except (RuntimeError, OdooConnectionError, MemoryError) as exc:
+                print(f"[odoo] get_contextual_price({model} {record_id}, pl={pricelist_id}) failed: {exc}")
+                logger.error(f"Failed to get contextual price for record {record_id} in model {model} with pricelist {pricelist_id}: {exc}")
+                prices[record_id] = None
+        return prices
