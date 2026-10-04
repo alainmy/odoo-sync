@@ -184,7 +184,7 @@ def sync_tax_to_woocommerce(
                     )
                     if response:
                         for t in response:
-                            if tax_name.lower() in t.get("name", "").lower():
+                            if tax_name.lower() == t.get("name", "").lower():
                                 existing_in_woo = t
                                 woocommerce_id = t["id"]
                                 __logger__.info(
