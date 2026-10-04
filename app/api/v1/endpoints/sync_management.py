@@ -167,6 +167,8 @@ async def list_odoo_products_with_sync_status(
         enriched_products, total_before_filter = sync_repo.get_products_with_sync_status(
             odoo_products,
             instance_id=instance_id,
+            instance=active_instance,
+            odoo_client=odoo,
             filter_status=filter_status
         )
 

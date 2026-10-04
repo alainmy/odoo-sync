@@ -7,8 +7,9 @@ import logging
 from typing import Optional, List, Dict, Tuple
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
-from app.models.admin import ProductSync
+from app.models.admin import ProductSync, WooCommerceInstance
 from app.repositories.base_sync_repository import BaseSyncRepository
+from microservices.admin.app.crud.odoo import OdooClient
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,8 @@ class ProductSyncRepository(BaseSyncRepository[ProductSync]):
         self,
         odoo_products: List[Dict],
         instance_id: int,
+        instance: WooCommerceInstance,
+        odoo_client: OdooClient,
         filter_status: Optional[str] = None
     ) -> Tuple[List[Dict], int]:
         """
@@ -116,12 +119,17 @@ class ProductSyncRepository(BaseSyncRepository[ProductSync]):
             # Apply filter
             if filter_status and sync_status != filter_status:
                 continue
-
+            
+            prices = odoo_client.get_contextual_prices(
+                    model="product.template",
+                    record_ids=[product["id"]],
+                    pricelist_id=instance.price_list.odoo_pricelist_id
+                )
             enriched.append({
                 "odoo_id": product["id"],
                 "name": product.get("name", ""),
                 "sku": product.get("default_code") if product.get("default_code") else None,
-                "price": product.get("list_price"),
+                "price": prices.get(product["id"]) if prices else product.get("list_price"),
                 "odoo_write_date": product.get("write_date"),
                 "sync_status": sync_status,
                 "woocommerce_id": sync_record.woocommerce_id if sync_record else None,
