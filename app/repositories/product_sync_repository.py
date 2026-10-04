@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from app.models.admin import ProductSync, WooCommerceInstance
 from app.repositories.base_sync_repository import BaseSyncRepository
-from microservices.admin.app.crud.odoo import OdooClient
+from app.crud.odoo import OdooClient
 
 logger = logging.getLogger(__name__)
 
