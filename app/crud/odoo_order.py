@@ -237,6 +237,16 @@ class OrderClient(OdooClient):
             logger.error("No payment method found in Odoo")
             raise HTTPException(status_code=400, detail="No se encontró método de pago manual en Odoo")
         logger.info(f"Payment method line for invoice payment: {payment_method_line_id}")
+        lines_id = self.search_read_sync(
+            model="account.move.line",
+            domain=[["move_id", "=", invoice_id]],
+            fields=["id"],
+        )
+        logger.info(f"Lines for invoice payment: {lines_id}")
+        line_ids = []
+        for line in lines_id:
+            line_ids.append(line.get("id"))
+        logger.info(f"Line IDs for invoice payment: {line_ids}")
         payment_wizard_id = self.create(
             model="account.payment.register",
             vals={
@@ -251,6 +261,7 @@ class OrderClient(OdooClient):
                 'active_model': 'account.move',
                 'active_ids': [invoice_id],
                 'active_id': invoice_id,
+                'line_ids': line_ids,
             }
         )
         logger.info(f"Payment wizard ID for invoice payment: {payment_wizard_id}")
