@@ -254,6 +254,7 @@ class OrderClient(OdooClient):
             if (l.get("currency_id") and l.get("amount_residual_currency"))
             or (not l.get("currency_id") and l.get("amount_residual"))
         ]
+        logger.info(f"Pending receivable lines for invoice {invoice_id}: {pending_line_ids}")
         if not pending_line_ids:
             logger.error(f"Invoice {invoice_id} has no pending receivable lines")
             raise HTTPException(status_code=400, detail=f"La factura {invoice_id} no tiene nada pendiente de pago")
@@ -270,12 +271,10 @@ class OrderClient(OdooClient):
                 "communication": f"WC-{payment_method_title}",
                 "payment_date": datetime.datetime.now().strftime("%Y-%m-%d"),
                 "group_payment": False,
-                "line_ids": [(6, 0, pending_line_ids)],
             },
             context={
-                'active_model': 'account.move',
-                'active_ids': [invoice_id],
-                'active_id': invoice_id,
+                'active_model': 'account.move.line',
+                'line_ids': pending_line_ids,
             }
         )
         logger.info(f"Payment wizard ID for invoice payment: {payment_wizard_id}")
@@ -287,11 +286,11 @@ class OrderClient(OdooClient):
             "account.payment.register",
             "action_create_payments",
             params=[payment_wizard_id["result"]],
-            context={
-                'active_model': 'account.move',
-                'active_ids': [invoice_id],
-                'active_id': invoice_id,
-            }
+            # context={
+            #     'active_model': 'account.move',
+            #     'active_ids': [invoice_id],
+            #     'active_id': invoice_id,
+            # }
         )
         logger.info(f"Payment registration result: {register_payment}")
         # get invoice payment
