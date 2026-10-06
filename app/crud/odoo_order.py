@@ -237,16 +237,29 @@ class OrderClient(OdooClient):
             logger.error("No payment method found in Odoo")
             raise HTTPException(status_code=400, detail="No se encontró método de pago manual en Odoo")
         logger.info(f"Payment method line for invoice payment: {payment_method_line_id}")
-        lines_id = self.search_read_sync(
+        
+        # Calculamos NOSOTROS las líneas pendientes de ESTA factura (y solo esta),
+        # en vez de confiar en active_model/active_ids del contexto, que puede
+        # arrastrar ids de llamadas anteriores si el conector reutiliza el context.
+        receivable_lines = self.search_read_sync(
             model="account.move.line",
-            domain=[["move_id", "=", invoice_id]],
-            fields=["id"],
+            domain=[
+                ["move_id", "=", invoice_id],
+                ["account_type", "in", ["asset_receivable", "liability_payable"]],
+            ],
+            fields=["id", "amount_residual", "amount_residual_currency", "currency_id"],
         )
-        logger.info(f"Lines for invoice payment: {lines_id}")
-        line_ids = []
-        for line in lines_id:
-            line_ids.append(line.get("id"))
-        logger.info(f"Line IDs for invoice payment: {line_ids}")
+        pending_line_ids = [
+            l["id"] for l in receivable_lines
+            if (l.get("currency_id") and l.get("amount_residual_currency"))
+            or (not l.get("currency_id") and l.get("amount_residual"))
+        ]
+        if not pending_line_ids:
+            logger.error(f"Invoice {invoice_id} has no pending receivable lines")
+            raise HTTPException(status_code=400, detail=f"La factura {invoice_id} no tiene nada pendiente de pago")
+
+        logger.info(f"Lines restricted to invoice {invoice_id}: {pending_line_ids}")
+
         payment_wizard_id = self.create(
             model="account.payment.register",
             vals={
@@ -256,12 +269,13 @@ class OrderClient(OdooClient):
                 "amount": order.get("amount_total", 0),
                 "communication": f"WC-{payment_method_title}",
                 "payment_date": datetime.datetime.now().strftime("%Y-%m-%d"),
+                "group_payment": False,
+                "line_ids": [(6, 0, pending_line_ids)],
             },
             context={
                 'active_model': 'account.move',
                 'active_ids': [invoice_id],
                 'active_id': invoice_id,
-                'line_ids': line_ids,
             }
         )
         logger.info(f"Payment wizard ID for invoice payment: {payment_wizard_id}")
