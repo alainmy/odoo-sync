@@ -274,7 +274,7 @@ class OrderClient(OdooClient):
             },
             context={
                 'active_model': 'account.move.line',
-                'line_ids': pending_line_ids,
+                'active_ids': pending_line_ids,
             }
         )
         logger.info(f"Payment wizard ID for invoice payment: {payment_wizard_id}")
@@ -286,11 +286,10 @@ class OrderClient(OdooClient):
             "account.payment.register",
             "action_create_payments",
             params=[payment_wizard_id["result"]],
-            # context={
-            #     'active_model': 'account.move',
-            #     'active_ids': [invoice_id],
-            #     'active_id': invoice_id,
-            # }
+            context={
+                'active_model': 'account.move.line',
+                'active_ids': pending_line_ids,
+            }
         )
         logger.info(f"Payment registration result: {register_payment}")
         # get invoice payment
