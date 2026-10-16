@@ -120,11 +120,13 @@ class ProductSyncRepository(BaseSyncRepository[ProductSync]):
             if filter_status and sync_status != filter_status:
                 continue
             
-            prices = odoo_client.get_contextual_prices(
-                    model="product.template",
-                    record_ids=[product["id"]],
-                    pricelist_id=instance.price_list.odoo_pricelist_id
-                )
+            prices = None
+            if instance.price_list:
+                prices = odoo_client.get_contextual_prices(
+                        model="product.template",
+                        record_ids=[product["id"]],
+                        pricelist_id=instance.price_list.odoo_pricelist_id
+                    )
             enriched.append({
                 "odoo_id": product["id"],
                 "name": product.get("name", ""),
