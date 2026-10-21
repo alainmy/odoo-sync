@@ -70,6 +70,7 @@ async def list_odoo_products_with_sync_status(
     category_id: Optional[int] = Query(
         None, description="Filter by Odoo category ID"),
     tag_ids: Optional[list] = Query(None, description="tags"),
+    category_ids: Optional[list] = Query(None, description="categories"),
     request: Request = None,
     db: Session = Depends(get_db),
     odoo: OdooClient = Depends(get_odoo_from_active_instance),
@@ -106,6 +107,8 @@ async def list_odoo_products_with_sync_status(
             domain.append(["default_code", "ilike", search])
         if category_id:
             domain.append(["categ_id", "=", category_id])
+        if category_ids:
+            domain.append(["public_categ_ids", "in", category_ids])
         if tag_ids:
             domain.append(["product_tag_ids", "in", tag_ids])
         if active_instance.company_id and len(companies) > 1:
