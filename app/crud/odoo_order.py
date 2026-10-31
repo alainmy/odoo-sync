@@ -3,9 +3,10 @@
 import datetime
 import json
 import os
+from unittest import result
 from xml import dom
 import dotenv
-from fastapi import HTTPException
+from fastapi import HTTPException, params
 import requests
 import logging
 
@@ -304,4 +305,42 @@ class OrderClient(OdooClient):
                 logger.error(f"No se encontró factura en Odoo")
                 raise HTTPException(status_code=400, detail="No se encontró factura en Odoo")
             return invoice_payments[0]["reconciled_payment_ids"][0]
-            
+    
+    def send_invoice_email(self,send_invoice_email):
+        
+        invoice_id = send_invoice_email.get("invoice_id")
+        if not invoice_id:
+            logger.error("No invoice ID provided for sending email")
+            raise HTTPException(status_code=400, detail="No invoice ID provided for sending email")
+
+        wizard = self.create(
+            model="account.move.send.wizard",
+                        params={
+                           "invoice_id": invoice_id
+                        },
+                        context={
+                            'active_model': 'account.move.line',
+                            'active_ids': invoice_id,
+                        }
+        )
+        logger.info(f"Send invoice email result for invoice {invoice_id}: {wizard}")
+        if not wizard or "result" not in wizard:
+            logger.error(f"Error sending invoice email for invoice {invoice_id}: {wizard}")
+            raise HTTPException(status_code=400, detail="Error sending invoice email in Odoo")
+        
+        #get view wizar id and call tu method to open the email wizard
+        view_wizard = self.cal_method(
+            "account.move.send.wizard",
+                        "action_send_and_print",
+                        params=[wizard["result"]],
+                        context={
+                            'active_model': 'account.move.line',
+                            'active_ids': invoice_id,
+                        }
+        )
+        if not view_wizard:
+            logger.error(f"Error getting view wizard for invoice {invoice_id}")
+            raise HTTPException(status_code=400, detail="Error getting view wizard in Odoo")
+        
+        return view_wizard
+        

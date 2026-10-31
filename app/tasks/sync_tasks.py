@@ -1347,6 +1347,44 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
         # ========== STEP 2: Find or Create Billing Address (type='invoice') ==========
         billing_name = f"{billing_address.get('first_name', '')} {billing_address.get('last_name', '')}".strip(
         )
+        # Country in odoo
+        country_code = billing_address.get("country", "")
+        country_id = None
+        if country_code:
+            country_id = client.search_read_sync(
+                model="res.country",
+                domain=[("code", "=", country_code)],
+                fields=["id", "code"]
+            )
+            country_id = country_id[0] if country_id else None
+        state_code = billing_address.get("state", "")
+        state_id = None
+        if state_code and country_id:
+            state_id = client.search_read_sync(
+                model="res.country.state",
+                domain=[("code", "=", state_code),
+                        ("country_id", "=", country_id["id"])],
+                fields=["id", "code"]
+            )
+            state_id = state_id[0] if state_id else None
+
+        # Put SIGD and type afip
+        # search sigd
+        sigd = client.search_read_sync(
+            model="l10n_latam.identification.type",
+            domain=[("name", "=", "SIGD")],
+            fields=["id", "name"],
+            limit=1
+        )
+        # responsability type (AFIP)
+        afip = client.search_read_sync(
+            model="l10n_ar.afip.responsibility.type",
+            domain=[("code", "=", "8")],
+            fields=["id", "name"],
+            limit=1
+        )
+        afip = afip[0] if afip else None
+        sigd = sigd[0] if sigd else None
         billing_partner_data = {
             "parent_id": odoo_contact_id,
             "name": billing_name,
@@ -1355,7 +1393,11 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             "street": billing_address.get("address_1", ""),
             "street2": billing_address.get("address_2", ""),
             "city": billing_address.get("city", ""),
+            "country_id": country_id,
+            "state_id": state_id,
             "zip": billing_address.get("postcode", ""),
+            "l10n_latam_identification_type_id": sigd["id"] if sigd else None,
+            "l10n_ar_afip_responsibility_type_id": afip["id"] if afip else None,
             "type": "invoice",
         }
 
@@ -1385,7 +1427,11 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
         is_shipping_different = (
             shipping_address.get("address_1") != billing_address.get("address_1") or
             shipping_address.get("city") != billing_address.get("city") or
-            shipping_address.get("postcode") != billing_address.get("postcode")
+            shipping_address.get("postcode") != billing_address.get("postcode") or
+            shipping_address.get("state", "") != billing_address.get("state", "") or
+            shipping_address.get(
+                "country", "") != billing_address.get("country", "")
+
         )
 
         if is_shipping_different:
@@ -1400,6 +1446,25 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                 "zip": shipping_address.get("postcode", ""),
                 "type": "delivery",
             }
+            # if shipping_address.get("country", "") != billing_address.get("country", "")
+            if shipping_address.get("country", "") != billing_address.get("country", ""):
+                shipping_partner_data["country_id"] = client.search_read_sync(
+                    model="res.country",
+                    domain=[("code", "=", shipping_address.get("country", ""))],
+                    fields=["id", "code"]
+                )
+                shipping_partner_data["country_id"] = shipping_partner_data[
+                    "country_id"][0] if shipping_partner_data["country_id"] else None
+
+            if shipping_address.get("state", "") != billing_address.get("state", "") and shipping_partner_data.get("country_id"):
+                shipping_partner_data["state_id"] = client.search_read_sync(
+                    model="res.country.state",
+                    domain=[("code", "=", shipping_address.get(
+                        "state", "")), ("country_id", "=", shipping_partner_data["country_id"]["id"])],
+                    fields=["id", "code"]
+                )
+                shipping_partner_data["state_id"] = shipping_partner_data[
+                    "state_id"][0] if shipping_partner_data["state_id"] else None
 
             shipping_result = _handle_sync_partner(
                 model="res.partner",
@@ -1440,7 +1505,8 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             instance.odoo_password
         )
         if existing_orders and existing_orders[0]['state'] == 'draft':
-            logger.info(f"Updating existing draft order with ID: {existing_orders[0]['id']}")
+            logger.info(
+                f"Updating existing draft order with ID: {existing_orders[0]['id']}")
             order_client.write(
                 model='sale.order',
                 vals={
@@ -1460,7 +1526,8 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                 taxes_sync = self.db.query(TaxSync).filter(
                     TaxSync.instance_id == instance_id
                 ).all()
-                logger.info(f"Taxes sync: with woo_id: {[t.woocommerce_id for t in taxes_sync]}")
+                logger.info(
+                    f"Taxes sync: with woo_id: {[t.woocommerce_id for t in taxes_sync]}")
                 odoo_taxes_ids = [
                     t.odoo_id for t in taxes_sync if t.woocommerce_id in taxes_ids]
                 logger.info(f"Odoo taxes ids: {odoo_taxes_ids}")
@@ -1518,9 +1585,9 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                 shipping_lines = order_data["shipping_lines"]
                 if shipping_lines:
                     taxes_sync_0 = self.db.query(TaxSync).filter(
-                                        TaxSync.odoo_name == "IVA 0%",
-                                        TaxSync.instance_id == instance_id
-                                    ).first()
+                        TaxSync.odoo_name == "IVA 0%",
+                        TaxSync.instance_id == instance_id
+                    ).first()
                     for shipping_line in shipping_lines:
                         taxs = []
                         # if shipping_line.get("taxes"):
@@ -1537,7 +1604,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                             "product_uom_qty": 1,
                             "price_unit": shipping_line["total"],
                             "name": f"WC - Delivery - {shipping_line['method_title']}",
-                            "tax_id": [(6, 0, taxs)],                        
+                            "tax_id": [(6, 0, taxs)],
                         }))
                         logger.info(f"Added delivery {order_lines}")
         # Validate that we have at least one order line
@@ -1598,7 +1665,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                     invoice, order_d = order_client.create_invoice(
                         order_id=order_id,
                         sale_journal_id=sale_journal_id
-                        )
+                    )
                     logger.info(f"Invoice created: {invoice}")
                     logger.info(f"Order data: {order_d}")
                     if invoice and order_d:
@@ -1617,6 +1684,10 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                                 record_id=order_id,
                                 body=message
                             )
+                        # send by email
+                        send = order_client.send_invoice_email(
+                            invoice_id=invoice
+                        )
                     else:
                         logger.error(
                             f"No invoice found in Odoo for order {order_id}")
@@ -1708,7 +1779,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             order_id = order_client.create(
                 model="sale.order", vals=sale_order_data)
             if sale_order_data["state"] == "completed" or sale_order_data["state"] == "processing":
-                
+
                 logger.info(
                     f"Confirming order {order_id} in Odoo as it is in '{sale_order_data['state']}' state."
                 )
@@ -1728,7 +1799,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                 invoice, order_d = order_client.create_invoice(
                     order_id=order_id,
                     sale_journal_id=sale_journal_id
-                    )
+                )
                 if invoice and order_d:
                     # create invoice payment
                     invoice_payment = order_client.create_invoice_payment(
@@ -1744,6 +1815,10 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                             model='sale.order',
                             record_id=order_id,
                             body=message
+                        )
+                    # send by email
+                    send = order_client.send_invoice_email(
+                            invoice_id=invoice
                         )
                 else:
                     logger.error(
