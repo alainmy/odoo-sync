@@ -1370,12 +1370,27 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
 
         # Put SIGD and type afip
         # search sigd
+        billing_dni = order_data.get("meta_data")
+        if billing_dni:
+            billing_dni = next((item["value"] for item in billing_dni if item["key"] == "_billing_dni"), None)
+        shipping_dni = order_data.get("meta_data")
+        if shipping_dni:
+            shipping_dni = next((item["value"] for item in shipping_dni if item["key"] == "_shipping_dni"), None)
+        sigd = None
         sigd = client.search_read_sync(
-            model="l10n_latam.identification.type",
-            domain=[("name", "=", "SIGD")],
-            fields=["id", "name"],
-            limit=1
-        )
+                model="l10n_latam.identification.type",
+                domain=[("name", "=", "SIGD")],
+                fields=["id", "name"],
+                limit=1
+            )
+        sigd = sigd[0] if sigd else None
+        dni = client.search_read_sync(
+                model="l10n_latam.identification.type",
+                domain=[("name", "=", "DNI")],
+                fields=["id", "name"],
+                limit=1
+            )
+        dni = dni[0] if dni else None
         # responsability type (AFIP)
         afip = client.search_read_sync(
             model="l10n_ar.afip.responsibility.type",
@@ -1383,8 +1398,14 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             fields=["id", "name"],
             limit=1
         )
+        final_consummer = client.search_read_sync(
+            model="l10n_ar.afip.responsibility.type",
+            domain=[("code", "=", "5")],
+            fields=["id", "name"],
+            limit=1
+        )
         afip = afip[0] if afip else None
-        sigd = sigd[0] if sigd else None
+        final_consummer = final_consummer[0] if final_consummer else None
         billing_partner_data = {
             "parent_id": odoo_contact_id,
             "name": billing_name,
@@ -1396,8 +1417,9 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             "country_id": country_id,
             "state_id": state_id,
             "zip": billing_address.get("postcode", ""),
-            "l10n_latam_identification_type_id": sigd["id"] if sigd else None,
-            "l10n_ar_afip_responsibility_type_id": afip["id"] if afip else None,
+            "vat": billing_dni if billing_dni else "",
+            "l10n_latam_identification_type_id": dni["id"] if billing_dni else sigd["id"] if sigd else None,
+            "l10n_ar_afip_responsibility_type_id": final_consummer["id"] if billing_dni else afip["id"] if afip else None,
             "type": "invoice",
         }
 
@@ -1437,6 +1459,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
         if is_shipping_different:
             shipping_name = f"{shipping_address.get('first_name', '')} {shipping_address.get('last_name', '')}".strip(
             )
+            
             shipping_partner_data = {
                 "parent_id": odoo_contact_id,
                 "name": shipping_name,
@@ -1444,6 +1467,9 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                 "street2": shipping_address.get("address_2", ""),
                 "city": shipping_address.get("city", ""),
                 "zip": shipping_address.get("postcode", ""),
+                "vat": shipping_dni if shipping_dni else "",
+                "l10n_latam_identification_type_id": dni["id"] if shipping_dni else sigd["id"] if sigd else None,
+                "l10n_ar_afip_responsibility_type_id": final_consummer["id"] if shipping_dni else afip["id"] if afip else None,
                 "type": "delivery",
             }
             # if shipping_address.get("country", "") != billing_address.get("country", "")
