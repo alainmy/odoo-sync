@@ -2,6 +2,7 @@
 Celery tasks for synchronization operations between WooCommerce and Odoo.
 """
 import logging
+from math import log
 from typing import Dict, Any, List, Optional, Tuple
 from celery import Task
 from sqlalchemy.orm import Session
@@ -356,6 +357,7 @@ def _handle_sync_partner(
         partner_id = existing_partners[0]["id"]
         update_data = {k: v for k, v in partner_data.items(
         ) if k != "type" and k != "parent_id"}
+        logger.info(f"Updating partner {partner_name} with data: {update_data}")
         odoo_client.write(model=model, vals=update_data, record_id=partner_id)
         logger.info(f"Updated existing {partner_name} in Odoo: {partner_id}")
     else:
@@ -1424,7 +1426,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             "l10n_ar_afip_responsibility_type_id": afip["id"] if afip else None,
             "type": "invoice",
         }
-        
+        logger.info(f"Billing partner data: {billing_partner_data}")
         billing_odoo_partner_id = _handle_sync_partner(
             model="res.partner",
             domain=[
@@ -1443,6 +1445,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             parent_sync=contact_sync,
             create_func=create_customer_in_odoo
         )
+        
 
         if not billing_odoo_partner_id:
             return {"success": False, "error": "Failed to sync billing address"}
