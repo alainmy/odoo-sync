@@ -36,12 +36,15 @@ def get_instance_by_id(db: Session, instance_id: int) -> Optional[WooCommerceIns
     ).first()
 
 
-def get_active_instance(db: Session, user_id: int) -> Optional[WooCommerceInstance]:
+def get_active_instance(db: Session, user_id: int, instance_id: Optional[int] = None) -> Optional[WooCommerceInstance]:
     """Obtener la instancia activa del usuario"""
-    return db.query(WooCommerceInstance).filter(
+    query = db.query(WooCommerceInstance).filter(
         WooCommerceInstance.user_id == user_id,
         WooCommerceInstance.is_active == True
-    ).first()
+    )
+    if instance_id:
+        query = query.filter(WooCommerceInstance.id == instance_id)
+    return query.first()
 
 
 def create_instance(db: Session, instance: WooCommerceInstanceCreate, user_id: int) -> WooCommerceInstance:
@@ -192,12 +195,23 @@ def activate_instance(db: Session, instance_id: int, user_id: int) -> Optional[W
         return None
 
     # Desactivar todas las instancias del usuario
-    db.query(WooCommerceInstance).filter(
-        WooCommerceInstance.user_id == user_id
-    ).update({"is_active": False})
+    # db.query(WooCommerceInstance).filter(
+    #     WooCommerceInstance.user_id == user_id
+    # ).update({"is_active": False})
 
     # Activar esta instancia
     db_instance.is_active = True
+    db.commit()
+    db.refresh(db_instance)
+    return db_instance
+
+def desactivate_instance(db: Session, instance_id: int, user_id: int) -> Optional[WooCommerceInstance]:
+    """Desactivar una instancia"""
+    db_instance = get_instance(db, instance_id, user_id)
+    if not db_instance:
+        return None
+
+    db_instance.is_active = False
     db.commit()
     db.refresh(db_instance)
     return db_instance

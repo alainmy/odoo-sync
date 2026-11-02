@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.schemas.language import OdooLanguageSchema
 from app.schemas.journal import OdooJournal, OdooJournalListResponse
-from app.schemas.websites import OdooCompany, OdooCompanyListResponse
+from app.schemas.websites import OdooCompany, OdooCompanyListResponse, OodooConfig
 dotenv.load_dotenv()
 
 
@@ -102,8 +102,10 @@ async def get_odoo_from_active_instance(
     current_user: Admin = Depends(get_current_user)
 ):
     """Obtener cliente de Odoo desde la instancia activa del usuario"""
-    # Obtener instancia activa
-    instance = crud_instance.get_active_instance(db, user_id=current_user.id)
+    # Obtener instancia activeinstance en el header
+    instance_id = request.headers.get("activeinstance") or request.headers.get("active_instance")
+    # Obtener de la variable 
+    instance = crud_instance.get_active_instance(db, user_id=current_user.id, instance_id=instance_id)
     if not instance:
         raise HTTPException(
             status_code=404,
@@ -782,6 +784,7 @@ async def save_invoice(
 
     return {"odoo_invoice_id": invoice["result"]}
 
+
 @router.post("/test-invoice-and-payment/", summary="Crear, confirmar y pagar una factura de prueba", tags=["invoice-test"])
 async def test_invoice_and_payment(
     request: Request,
@@ -875,22 +878,23 @@ async def test_invoice_and_payment(
             'action_post',
             params=[[invoice_id]]
         )
-        
+
         # create wizard payment
-        payment_method_line_id= odoo.search_read_sync(
+        payment_method_line_id = odoo.search_read_sync(
             model="account.payment.method.line",
             domain=[["code", "=", "manual"]],
-            fields=["id", "name","journal_id"],
+            fields=["id", "name", "journal_id"],
             limit=1
         )
         if not payment_method_line_id:
             _logger.error("No payment method found in Odoo")
-            raise HTTPException(status_code=400, detail="No se encontró método de pago manual en Odoo")
-        
+            raise HTTPException(
+                status_code=400, detail="No se encontró método de pago manual en Odoo")
+
         payment_wizard_id = odoo.create(
             model="account.payment.register",
             vals={
-               "journal_id": payment_method_line_id[0].get("journal_id")[0],
+                "journal_id": payment_method_line_id[0].get("journal_id")[0],
                 "partner_type": "customer",
                 "payment_method_line_id": payment_method_line_id[0].get("id"),
                 "amount": order.get("amount_total", 0),
@@ -904,8 +908,10 @@ async def test_invoice_and_payment(
             }
         )
         if not payment_wizard_id or "result" not in payment_wizard_id:
-            _logger.error(f"Error creando wizzard de pago: {payment_wizard_id}")
-            raise HTTPException(status_code=400, detail="Error creando wizzard de pago en Odoo")
+            _logger.error(
+                f"Error creando wizzard de pago: {payment_wizard_id}")
+            raise HTTPException(
+                status_code=400, detail="Error creando wizzard de pago en Odoo")
         register_payment = odoo.cal_method(
             "account.payment.register",
             "action_create_payments",
@@ -920,13 +926,13 @@ async def test_invoice_and_payment(
         invoice_payments = odoo.search_read_sync(
             model="account.move",
             domain=[["id", "=", invoice_id]],
-            fields=["id", "name", "state","reconciled_payment_ids"],
+            fields=["id", "name", "state", "reconciled_payment_ids"],
             limit=1
         )
         if not invoice_payments:
             _logger.error(f"No se encontró factura en Odoo")
-            raise HTTPException(status_code=400, detail="No se encontró factura en Odoo")
-        
+            raise HTTPException(
+                status_code=400, detail="No se encontró factura en Odoo")
 
         return {
             "status": "success",
@@ -941,19 +947,35 @@ async def test_invoice_and_payment(
         _logger.error(f"Error inesperado en prueba de factura: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/journals", response_model=OdooJournalListResponse)
+
+@router.post("/journals", response_model=OdooJournalListResponse)
 async def get_payment_journals(
     request: Request,
+    db: Session = Depends(get_db),
     type: Optional[str] = Query(
         None, description="Filtrar por tipo de diario (bank, cash,sale)"),
-    odoo: OdooClient = Depends(get_odoo_from_active_instance),
+    odoo_config: OodooConfig = Body(None),
+    current_user: Admin = Depends(get_current_user)
 ):
     """
     Obtener lista de métodos de pago de WooCommerce.
     """
-    payment_journals = odoo.search_read_sync(
+    odoo_client = None
+    if not odoo_config.url:
+        active_instance = crud_instance.get_active_instance(
+            db, user_id=current_user.id)
+        odoo_config = {
+            "url": active_instance.odoo_url,
+            "db": active_instance.odoo_db,
+            "username": active_instance.odoo_username,
+            "password": active_instance.odoo_password
+        }
+    odoo_config.company_id = None
+    odoo_client = OdooClient(**odoo_config.model_dump())
+    payment_journals = odoo_client.search_read_sync(
         model="account.journal",
-        domain=[["type", "in", ["bank", "cash"]]] if not type else [["type", "=", type]],
+        domain=[["type", "in", ["bank", "cash"]]
+                ] if not type else [["type", "=", type]],
         fields=["id", "name", "code", "type", "active"],
         limit=100
     )
@@ -963,19 +985,34 @@ async def get_payment_journals(
             detail="No payment journals found"
         )
     return OdooJournalListResponse(
-        payment_journals=[OdooJournal(**journal) for journal in payment_journals],
+        payment_journals=[OdooJournal(**journal)
+                          for journal in payment_journals],
         total_count=len(payment_journals)
     )
-    
-@router.get("/companies", response_model=OdooCompanyListResponse)
+
+
+@router.post("/companies", response_model=OdooCompanyListResponse)
 async def get_companies(
     request: Request,
-    odoo: OdooClient = Depends(get_odoo_from_active_instance),
+    db: Session = Depends(get_db),
+    odoo_config: OodooConfig = Body(None),
+    current_user: Admin = Depends(get_current_user)
 ):
     """
     Obtener lista de empresas de Odoo.
     """
-    odoo_client = odoo
+    odoo_client = None
+    if not odoo_config.url:
+        active_instance = crud_instance.get_active_instance(
+            db, user_id=current_user.id)
+        odoo_config = {
+            "url": active_instance.odoo_url,
+            "db": active_instance.odoo_db,
+            "username": active_instance.odoo_username,
+            "password": active_instance.odoo_password
+        }
+    odoo_config.company_id = None
+    odoo_client = OdooClient(**odoo_config.model_dump())
     uid = await odoo_client.odoo_authenticate()
     if not uid:
         raise HTTPException(

@@ -50,6 +50,7 @@ from app.repositories.payment_journal_sync_repository import PaymentJournalSyncR
 from app.tasks.task_monitoring import create_task_response
 from app.api.v1.endpoints.odoo import get_session_id, get_odoo_from_active_instance
 from celery import group
+from app.schemas.websites import OodooConfig
 
 
 logger = logging.getLogger(__name__)
@@ -100,7 +101,7 @@ async def list_odoo_products_with_sync_status(
             fields=["id", "name"],
             model="res.company",
         )
-        companies = companies.get('result',[])
+        companies = companies.get('result', [])
         if search:
             domain.append("|")
             domain.append(["name", "ilike", search])
@@ -121,7 +122,8 @@ async def list_odoo_products_with_sync_status(
         domain.append(["is_published", "=", True])
         domain_count = [["sale_ok", "=", True]]
         if active_instance.company_id and len(companies) > 1:
-            domain_count.append(["company_id", "=", active_instance.company_id])
+            domain_count.append(
+                ["company_id", "=", active_instance.company_id])
         # Fetch from Odoo (over-fetch to account for status filtering)
         # If filtering by status, we need more products since some will be filtered out
         # fetch_limit = offset
@@ -236,7 +238,7 @@ async def batch_sync_products(
 
         # Fetch products from Odoo
         fields = [
-                "id",
+            "id",
                 "name",
                 "default_code",
                 "list_price",
@@ -256,15 +258,15 @@ async def batch_sync_products(
                 "product_template_image_ids",
                 "is_published",
                 "weight",
-                "product_height", # Campo de modulo de la OCA
-                "product_length", # Campo de modulo de la OCA
-                "product_width", # Campo de modulo de la OCA
+                "product_height",  # Campo de modulo de la OCA
+                "product_length",  # Campo de modulo de la OCA
+                "product_width",  # Campo de modulo de la OCA
                 'public_categ_ids',
                 "taxes_id",
-            ]
+        ]
         installed_modules = odoo.get_installed_modules()
         modules = [module.get("name") for module in installed_modules if module["name"] in [
-                    "product_dimension"]]
+            "product_dimension"]]
         if modules:
             fields.append("product_height")
             fields.append("product_length")
@@ -317,7 +319,8 @@ async def batch_sync_products(
             # Convert product to dict and queue task
             # get url images
             if instance.product_descriptions == "description_sale":
-                product["description"] = product.pop("description_ecommerce", "")
+                product["description"] = product.pop(
+                    "description_ecommerce", "")
             product.update({
                 "is_published": request_data.publish_product
                 if request_data.publish_product is not None else False})
@@ -360,6 +363,7 @@ async def batch_sync_products(
         logger.error(f"Error in batch sync: {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail=f"Batch sync error: {str(e)}")
+
 
 @router.post("/products/batch-sync/update-status", response_model=BatchSyncResponse)
 async def batch_sync_products_update_status(
@@ -754,7 +758,8 @@ async def get_sync_statistics(
 
 @router.get("/taxes", response_model=OdooTaxListResponse)
 async def list_odoo_taxes_with_sync_status(
-    only_included: bool = Query(None, description="Include taxes included in pricelist"),
+    only_included: bool = Query(
+        None, description="Include taxes included in pricelist"),
     limit: int = Query(50, le=200, description="Number of taxes to return"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
     filter_status: Optional[str] = Query(
@@ -765,7 +770,11 @@ async def list_odoo_taxes_with_sync_status(
         None, description="Search by tax name"),
     request: Request = None,
     db: Session = Depends(get_db),
-    odoo: OdooClient = Depends(get_odoo_from_active_instance),
+    # odoo: OdooClient = Depends(get_odoo_from_active_instance),
+    odoo_url: str = Query(None, description="Odoo instance URL"),
+    odoo_db: str = Query(None, description="Odoo instance database"),
+    odoo_username: str = Query(None, description="Odoo instance username"),
+    odoo_password: str = Query(None, description="Odoo instance password"),
     current_user: Admin = Depends(get_current_user)
 ):
     """
@@ -773,7 +782,27 @@ async def list_odoo_taxes_with_sync_status(
     """
     try:
         active_instance = get_active_instance(db, current_user)
-        uid = await odoo.odoo_authenticate()
+        odoo_client = None
+        if not odoo_url:
+            active_instance = crud_instance.get_active_instance(
+                    db, user_id=current_user.id)
+            odoo_config = OodooConfig(
+                url=active_instance.odoo_url,
+                db=active_instance.odoo_db,
+                username=active_instance.odoo_username,
+                password=active_instance.odoo_password,
+                company_id=None
+            )
+        else:
+            odoo_config = OodooConfig(
+                url=odoo_url,
+                db=odoo_db,
+                username=odoo_username,
+                password=odoo_password,
+                company_id=None
+            )
+        odoo_client = OdooClient(**odoo_config.model_dump())
+        uid = await odoo_client.odoo_authenticate()
         if not uid:
             raise HTTPException(
                 status_code=301, detail="Failed to authenticate with Odoo")
@@ -786,7 +815,7 @@ async def list_odoo_taxes_with_sync_status(
         if search:
             domain.append(["name", "ilike", search])
 
-        search_count = await odoo.search_count(
+        search_count = await odoo_client.search_count(
             uid, "account.tax", domain=[
                 ["type_tax_use", "=", "sale"],
                 ["amount_type", "=", "percent"],
@@ -795,7 +824,7 @@ async def list_odoo_taxes_with_sync_status(
         )
         tax_count = search_count["result"]
 
-        odoo_response = await odoo.search_read(
+        odoo_response = await odoo_client.search_read(
             uid,
             "account.tax",
             domain=domain if domain else [],
@@ -1002,24 +1031,25 @@ async def get_tax_sync_statistics(
         logger.error(f"Error getting tax statistics: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.get("/payment-journals", response_model=PaymentJournalListResponse)
 async def list_payment_journal(
     db: Session = Depends(get_db),
     current_user: Admin = Depends(get_current_user)
 ):
-    
+
     instance = crud_instance.get_active_instance(
-            db, user_id=current_user.id)
-    
+        db, user_id=current_user.id)
+
     repo = PaymentJournalSyncRepository(db=db)
     payment_jpurnals = repo.get_all_by_instance(instance.id)
-    
+
     return PaymentJournalListResponse(
         data=[
             PaymentJournalSyncStatusResponse(
                 id=item.id,
                 odoo_journal_id=item.odoo_journal_id,
-                odoo_journal_name   =item.odoo_journal_name,
+                odoo_journal_name=item.odoo_journal_name,
                 odoo_journal_type=item.odoo_journal_type,
                 odoo_journal_code=item.odoo_journal_code,
                 woocommerce_payment_method_id=item.woocommerce_payment_method_id,
@@ -1028,10 +1058,11 @@ async def list_payment_journal(
                 last_synced_at=item.last_synced_at,
                 has_error=item.error,
                 error_message=item.error_details if item.error else None
-                ) for item in payment_jpurnals
+            ) for item in payment_jpurnals
         ],
-        total_count= len(payment_jpurnals)
+        total_count=len(payment_jpurnals)
     )
+
 
 @router.post("/payment-journals")
 async def create_payment_journal_mapping(
@@ -1053,12 +1084,12 @@ async def create_payment_journal_mapping(
                 status_code=404,
                 detail="No active instance found"
             )
-        
+
         # Check if mapping already exists for this WooCommerce payment method and instance
         sync_repo = PaymentJournalSyncRepository(db)
         existing_mapping = sync_repo.get_by_woocommerce_payment_method_id_and_instance(
             payment_journal.woocommerce_payment_method_id, instance.id)
-        
+
         if existing_mapping:
             # Update existing mapping
             updated_mapping = sync_repo.update_sync_record(
@@ -1070,7 +1101,7 @@ async def create_payment_journal_mapping(
                 odoo_journal_code=payment_journal.odoo_journal_code,
                 message="Mapping updated via API"
             )
-            
+
             return PaymentJournalSyncStatusResponse(
                 odoo_id=updated_mapping.odoo_journal_id,
                 odoo_name=updated_mapping.odoo_journal_name,
@@ -1095,7 +1126,7 @@ async def create_payment_journal_mapping(
                 instance_id=instance.id,
                 message="Mapping created via API"
             )
-            
+
             return PaymentJournalSyncStatusResponse(
                 id=new_mapping.id,
                 odoo_journal_id=new_mapping.odoo_journal_id,
@@ -1109,17 +1140,18 @@ async def create_payment_journal_mapping(
                 has_error=new_mapping.error,
                 error_message=new_mapping.error_details if new_mapping.error else None
             )
-            
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error creating payment journal mapping: {e}", exc_info=True)
+        logger.error(
+            f"Error creating payment journal mapping: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"Error creating payment journal mapping: {str(e)}"
         )
 
-@router.delete("/payment-journals/{journal_id}", 
+@router.delete("/payment-journals/{journal_id}",
                summary="Delete a payment journal mapping")
 def delete_payment_journal_mapping(
     journal_id: int,
@@ -1131,29 +1163,30 @@ def delete_payment_journal_mapping(
     """
     try:
         # Get instance configuration
-        instance = crud_instance.get_active_instance(db, user_id=current_user.id)
+        instance = crud_instance.get_active_instance(
+            db, user_id=current_user.id)
         if not instance:
             raise HTTPException(
                 status_code=404,
                 detail="No active instance found"
             )
-        
+
         # Find mapping by record ID and instance
         sync_repo = PaymentJournalSyncRepository(db)
         existing_mapping = db.query(PaymentJournalSync).filter(
             PaymentJournalSync.id == journal_id,
             PaymentJournalSync.instance_id == instance.id
         ).first()
-        
+
         if not existing_mapping:
             raise HTTPException(
                 status_code=404,
                 detail="No payment journal mapping found"
             )
-        
+
         # Delete the mapping
         sync_repo.delete_sync_record(existing_mapping)
-        
+
         return {
             "status": "success",
             "message": f"Payment journal mapping deleted successfully"
@@ -1161,7 +1194,8 @@ def delete_payment_journal_mapping(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error deleting payment journal mapping: {e}", exc_info=True)
+        logger.error(
+            f"Error deleting payment journal mapping: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"Error deleting payment journal mapping: {str(e)}"

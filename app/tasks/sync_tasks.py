@@ -1418,11 +1418,13 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             "state_id": state_id,
             "zip": billing_address.get("postcode", ""),
             "vat": billing_dni if billing_dni else "",
-            "l10n_latam_identification_type_id": dni["id"] if billing_dni else sigd["id"] if sigd else None,
-            "l10n_ar_afip_responsibility_type_id": final_consummer["id"] if billing_dni else afip["id"] if afip else None,
+            # "l10n_latam_identification_type_id": dni["id"] if billing_dni else sigd["id"] if sigd else None,
+            # "l10n_ar_afip_responsibility_type_id": final_consummer["id"] if billing_dni else afip["id"] if afip else None,
+            "l10n_latam_identification_type_id": sigd["id"] if sigd else None,
+            "l10n_ar_afip_responsibility_type_id": afip["id"] if afip else None,
             "type": "invoice",
         }
-
+        
         billing_odoo_partner_id = _handle_sync_partner(
             model="res.partner",
             domain=[
@@ -1468,8 +1470,10 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                 "city": shipping_address.get("city", ""),
                 "zip": shipping_address.get("postcode", ""),
                 "vat": shipping_dni if shipping_dni else "",
-                "l10n_latam_identification_type_id": dni["id"] if shipping_dni else sigd["id"] if sigd else None,
-                "l10n_ar_afip_responsibility_type_id": final_consummer["id"] if shipping_dni else afip["id"] if afip else None,
+                # "l10n_latam_identification_type_id": dni["id"] if shipping_dni else sigd["id"] if sigd else None,
+                # "l10n_ar_afip_responsibility_type_id": final_consummer["id"] if shipping_dni else afip["id"] if afip else None,
+                "l10n_latam_identification_type_id": sigd["id"] if sigd else None,
+                "l10n_ar_afip_responsibility_type_id": afip["id"] if afip else None,
                 "type": "delivery",
             }
             # if shipping_address.get("country", "") != billing_address.get("country", "")

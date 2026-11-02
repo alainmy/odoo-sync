@@ -282,3 +282,19 @@ def activate_instance(
             detail="Instancia no encontrada"
         )
     return instance
+
+@router.patch("/{instance_id}/desactivate", response_model=WooCommerceInstance)
+def desactivate_instance(
+    instance_id: int,
+    db: Session = Depends(get_db),
+    current_user: Admin = Depends(get_current_user)
+):
+    """Desactivar una instancia"""
+    instance = crud_instance.desactivate_instance(
+        db, instance_id=instance_id, user_id=current_user.id)
+    if not instance:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Instancia no encontrada"
+        )
+    return instance
