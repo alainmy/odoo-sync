@@ -1697,13 +1697,23 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                 logger.info(f"Retrieved ticket from Andreani: {ticket}")
                 if ticket:
                     # attach the ticket to the order in Odoo
-                    # create a attachment in Odoo for the order in odoo
-                    order_client.create_attachment(
-                        model='sale.order',
-                        record_id=order_id,
-                        attachment_name=f"Andreani Ticket - {tracking_number}",
-                        attachment_content=ticket
+                    # search for existing attachments for the order in Odoo
+                    existing_attachments = order_client.search_read_sync(
+                        model='ir.attachment',
+                        domain=[['res_model', '=', 'sale.order'],
+                                ['name', '=',
+                                 f"Andreani Ticket - {tracking_number}"],
+                                ['res_id', '=', order_id]],
+                        fields=['id', 'name'],
                     )
+                    # create a attachment in Odoo for the order in odoo if it doesn't already exist
+                    if not existing_attachments:
+                        order_client.create_attachment(
+                            model='sale.order',
+                            record_id=order_id,
+                            attachment_name=f"Andreani Ticket - {tracking_number}",
+                            attachment_content=ticket
+                        )
             # Only update if order is in draft state
             # Orders in other states (sent, sale, done, cancelled) have restrictions
             if order_state == 'draft':
@@ -1842,13 +1852,24 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                 logger.info(f"Retrieved ticket from Andreani: {ticket}")
                 if ticket:
                     # attach the ticket to the order in Odoo
-                    # create a attachment in Odoo for the order in odoo
-                    order_client.create_attachment(
-                        model='sale.order',
-                        record_id=order_id,
-                        attachment_name=f"Andreani Ticket - {tracking_number}",
-                        attachment_content=ticket
+
+                    # search for existing attachments for the order in Odoo
+                    existing_attachments = order_client.search_read_sync(
+                        model='ir.attachment',
+                        domain=[['res_model', '=', 'sale.order'],
+                                ['name', '=',
+                                    f"Andreani Ticket - {tracking_number}"],
+                                ['res_id', '=', order_id]],
+                        fields=['id', 'name'],
                     )
+                    # create a attachment in Odoo for the order in odoo if it doesn't already exist
+                    if not existing_attachments:
+                        order_client.create_attachment(
+                            model='sale.order',
+                            record_id=order_id,
+                            attachment_name=f"Andreani Ticket - {tracking_number}",
+                            attachment_content=ticket
+                        )
             if sale_order_data["state"] == "completed" or sale_order_data["state"] == "processing":
 
                 logger.info(
