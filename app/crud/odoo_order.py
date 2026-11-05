@@ -366,7 +366,7 @@ class OrderClient(OdooClient):
                 "res_model": model,
                 'type': 'binary',
                 "res_id": record_id,
-                "datas": base64.b64encode(attachment_content),
+                "datas": base64.b64encode(attachment_content.content),
                 'mimetype': 'application/pdf',
             }
         )
