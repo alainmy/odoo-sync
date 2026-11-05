@@ -359,6 +359,14 @@ class OrderClient(OdooClient):
             logger.error("No attachment content provided for creating attachment")
             raise HTTPException(status_code=400, detail="No attachment content provided for creating attachment")
 
+        # Ensure content is bytes
+        content_bytes = attachment_content.content
+        if isinstance(content_bytes, str):
+            content_bytes = content_bytes.encode('utf-8')
+
+        # Encode to base64 and decode to string (for JSON serialization)
+        attachment_data_b64 = base64.b64encode(content_bytes).decode('utf-8')
+
         attachment = self.create(
             model="ir.attachment",
             vals={
@@ -366,7 +374,7 @@ class OrderClient(OdooClient):
                 "res_model": model,
                 'type': 'binary',
                 "res_id": record_id,
-                "datas": base64.b64encode(attachment_content.content),
+                "datas": attachment_data_b64,
                 'mimetype': 'application/pdf',
             }
         )
