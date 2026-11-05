@@ -1,6 +1,9 @@
 
 
+import logging
+import json
 
+logger = logging.getLogger(__name__)
 import requests
 
 
@@ -20,7 +23,7 @@ def login(instance):
         "Content-Type": "application/json"
     }
     response = requests.post(
-        f"{andreani_base_url}/login",
+        f"{andreani_base_url}/api/v1/login",
         headers=headers
     )
     if response.status_code != 200:
@@ -31,6 +34,7 @@ def get_ticket_from_andreani(instance,trancking_number):
     andreani_base_url, andreani_key = get_andreani_config(instance)
     if not andreani_key:
         return None
+    logger.info(f"credentials: {andreani_base_url}")
     # Implement the logic to get the ticket from Andreani using the andreani_key
     # This is a placeholder for the actual API call or logic
     session = login(instance)
@@ -40,16 +44,18 @@ def get_ticket_from_andreani(instance,trancking_number):
     payload = {
         "trackingNumbers": [trancking_number]
     }
-    response = requests.post(
-        f"{andreani_base_url}/ticket",
+    logger.info(f"andreani request payload: {payload}, base_url: {andreani_base_url}")
+    response = requests.request("POST",
+        f"{andreani_base_url}/api/v1/Pyme/ticket",
         headers={
             "X-Auth-Token": f"{session}",
             "Content-Type": "application/json"
         },
-        json=payload
+        data=json.dumps(payload)
     )
     if response.status_code != 200:
         return None
     ticket = response
+    logger.info(f"Ticket response: {ticket}")
     
     return ticket

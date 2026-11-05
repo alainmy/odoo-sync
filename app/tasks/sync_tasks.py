@@ -1680,19 +1680,11 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
         meta_data = order_data.get("meta_data")
         order_andreani_tracking_number = next(
             (item["value"] for item in meta_data if item["key"] == "_order_andreani_tracking_number"), None)
+
+        tracking_number = None
         if order_andreani_tracking_number:
             tracking_number = order_andreani_tracking_number
-            ticket = get_ticket_from_andreani(instance, tracking_number)
-            logger.info(f"Retrieved ticket from Andreani: {ticket}")
-            if ticket:
-                # attach the ticket to the order in Odoo
-                # create a attachment in Odoo for the order in odoo
-                order_client.create_attachment(
-                    model='sale.order',
-                    record_id=order_id,
-                    attachment_name=f"Andreani Ticket - {tracking_number}",
-                    attachment_content=ticket
-                )
+
         if existing_orders:
             logger.info(
                 f"Order already exists in Odoo: {existing_orders[0]['id']}")
@@ -1700,8 +1692,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             order_state = existing_orders[0]['state']
 
             # Get ticket from Andreani if tracking number is available
-            if order_andreani_tracking_number:
-                tracking_number = order_andreani_tracking_number
+            if tracking_number:
                 ticket = get_ticket_from_andreani(instance, tracking_number)
                 logger.info(f"Retrieved ticket from Andreani: {ticket}")
                 if ticket:
@@ -1846,8 +1837,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                 f"Creating new sale order in Odoo for WooCommerce order {wc_order_id}")
             order_id = order_client.create(
                 model="sale.order", vals=sale_order_data)
-            if order_andreani_tracking_number:
-                tracking_number = order_andreani_tracking_number
+            if tracking_number:
                 ticket = get_ticket_from_andreani(instance, tracking_number)
                 logger.info(f"Retrieved ticket from Andreani: {ticket}")
                 if ticket:
