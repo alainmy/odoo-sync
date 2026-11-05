@@ -1930,9 +1930,9 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                     "<p><strong>DNI de facturación</strong> — {billing_name}: <code>{billing_dni}</code><br/>"
                     "<strong>DNI de envío</strong> — {shipping_name}: <code>{shipping_dni}</code></p>"
                 ).format(
-                    billing_name=billing_address['name'],
+                    billing_name=billing_address['first_name'],
                     billing_dni=billing_dni,
-                    shipping_name=shipping_address['name'],
+                    shipping_name=shipping_address['first_name'],
                     shipping_dni=shipping_dni,
                 )
                 order_client.message_post(
