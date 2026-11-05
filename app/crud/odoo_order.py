@@ -361,7 +361,7 @@ class OrderClient(OdooClient):
 
         attachment = self.create(
             model="ir.attachment",
-            params={
+            vals={
                 "name": attachment_name,
                 "res_model": model,
                 'type': 'binary',
