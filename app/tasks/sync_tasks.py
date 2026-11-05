@@ -4,6 +4,8 @@ Celery tasks for synchronization operations between WooCommerce and Odoo.
 import logging
 from math import log
 from typing import Dict, Any, List, Optional, Tuple
+
+import markupsafe
 from celery import Task
 from sqlalchemy.orm import Session
 from app.celery_app import celery_app
@@ -1921,6 +1923,23 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                         record_id=order_id,
                         body=message
                     )
+
+            # message for write dni client in the chatter
+            if shipping_dni and billing_dni:
+                body = markupsafe.Markup(
+                    "<p><strong>DNI de facturación</strong> — {billing_name}: <code>{billing_dni}</code><br/>"
+                    "<strong>DNI de envío</strong> — {shipping_name}: <code>{shipping_dni}</code></p>"
+                ).format(
+                    billing_name=billing_address['name'],
+                    billing_dni=billing_dni,
+                    shipping_name=shipping_address['name'],
+                    shipping_dni=shipping_dni,
+                )
+                order_client.message_post(
+                    model='sale.order',
+                    record_id=order_id,
+                    body=body
+                )
             action = "created"
 
         logger.info(f"Order {action}: Odoo ID {order_id}")
