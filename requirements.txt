@@ -64,7 +64,7 @@ pytz==2024.2
 pyusb==1.2.1
 # pywin32==308
 qrcode==7.4.2
-redis>=6.1.0
+redis==6.1.0
 celery[redis]==5.3.4
 flower==2.0.1
 reportlab==3.6.12
