@@ -308,3 +308,5 @@ class WooCommerceInstance(Base):
     odoo_journal_id = Column(Integer)
     company_id = Column(Integer)
     tax_included_id = Column(Integer)
+    andreani_key = Column(String(255))
+    andreani_base_url = Column(String(500))

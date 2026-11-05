@@ -43,6 +43,7 @@ from app.services.odoo_service import create_customer_in_odoo
 from app.services.woocommerce.client import wc_request_with_logging
 from app.crud.odoo_order import OrderClient
 from app.repositories.payment_journal_sync_repository import PaymentJournalSyncRepository
+from app.services.woocommerce.anreani import get_ticket_from_andreani
 
 
 logger = logging.getLogger(__name__)
@@ -357,7 +358,8 @@ def _handle_sync_partner(
         partner_id = existing_partners[0]["id"]
         update_data = {k: v for k, v in partner_data.items(
         ) if k != "type" and k != "parent_id"}
-        logger.info(f"Updating partner {partner_name} with data: {update_data}")
+        logger.info(
+            f"Updating partner {partner_name} with data: {update_data}")
         odoo_client.write(model=model, vals=update_data, record_id=partner_id)
         logger.info(f"Updated existing {partner_name} in Odoo: {partner_id}")
     else:
@@ -1358,40 +1360,42 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                 domain=[("code", "=", country_code)],
                 fields=["id", "code"]
             )
-            country_id = country_id[0] if country_id else None
+            country_id = country_id[0]["id"] if country_id else None
         state_code = billing_address.get("state", "")
         state_id = None
         if state_code and country_id:
             state_id = client.search_read_sync(
                 model="res.country.state",
                 domain=[("code", "=", state_code),
-                        ("country_id", "=", country_id["id"])],
+                        ("country_id", "=", country_id)],
                 fields=["id", "code"]
             )
-            state_id = state_id[0] if state_id else None
+            state_id = state_id[0]["id"] if state_id else None
 
         # Put SIGD and type afip
         # search sigd
         billing_dni = order_data.get("meta_data")
         if billing_dni:
-            billing_dni = next((item["value"] for item in billing_dni if item["key"] == "_billing_dni"), None)
+            billing_dni = next(
+                (item["value"] for item in billing_dni if item["key"] == "_billing_dni"), None)
         shipping_dni = order_data.get("meta_data")
         if shipping_dni:
-            shipping_dni = next((item["value"] for item in shipping_dni if item["key"] == "_shipping_dni"), None)
+            shipping_dni = next(
+                (item["value"] for item in shipping_dni if item["key"] == "_shipping_dni"), None)
         sigd = None
         sigd = client.search_read_sync(
-                model="l10n_latam.identification.type",
-                domain=[("name", "=", "SIGD")],
-                fields=["id", "name"],
-                limit=1
-            )
+            model="l10n_latam.identification.type",
+            domain=[("id", "=", 43)],
+            fields=["id", "name"],
+            limit=1
+        )
         sigd = sigd[0] if sigd else None
         dni = client.search_read_sync(
-                model="l10n_latam.identification.type",
-                domain=[("name", "=", "DNI")],
-                fields=["id", "name"],
-                limit=1
-            )
+            model="l10n_latam.identification.type",
+            domain=[("name", "=", "DNI")],
+            fields=["id", "name"],
+            limit=1
+        )
         dni = dni[0] if dni else None
         # responsability type (AFIP)
         afip = client.search_read_sync(
@@ -1445,7 +1449,6 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             parent_sync=contact_sync,
             create_func=create_customer_in_odoo
         )
-        
 
         if not billing_odoo_partner_id:
             return {"success": False, "error": "Failed to sync billing address"}
@@ -1464,7 +1467,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
         if is_shipping_different:
             shipping_name = f"{shipping_address.get('first_name', '')} {shipping_address.get('last_name', '')}".strip(
             )
-            
+
             shipping_partner_data = {
                 "parent_id": odoo_contact_id,
                 "name": shipping_name,
@@ -1485,19 +1488,19 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                     model="res.country",
                     domain=[("code", "=", shipping_address.get("country", ""))],
                     fields=["id", "code"]
-                )
+                )[0]["id"]
                 shipping_partner_data["country_id"] = shipping_partner_data[
-                    "country_id"][0] if shipping_partner_data["country_id"] else None
+                    "country_id"] if shipping_partner_data["country_id"] else None
 
             if shipping_address.get("state", "") != billing_address.get("state", "") and shipping_partner_data.get("country_id"):
                 shipping_partner_data["state_id"] = client.search_read_sync(
                     model="res.country.state",
                     domain=[("code", "=", shipping_address.get(
-                        "state", "")), ("country_id", "=", shipping_partner_data["country_id"]["id"])],
+                        "state", "")), ("country_id", "=", shipping_partner_data["country_id"])],
                     fields=["id", "code"]
-                )
+                )[0]["id"]
                 shipping_partner_data["state_id"] = shipping_partner_data[
-                    "state_id"][0] if shipping_partner_data["state_id"] else None
+                    "state_id"] if shipping_partner_data["state_id"] else None
 
             shipping_result = _handle_sync_partner(
                 model="res.partner",
@@ -1672,12 +1675,44 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
         payment_journal = payment_journal_repo.get_by_woocommerce_payment_method_id_and_instance(
             payment_method_id, instance_id)
         sale_journal_id = instance.odoo_journal_id
+
+        # metadata
+        meta_data = order_data.get("meta_data")
+        order_andreani_tracking_number = next(
+            (item["value"] for item in meta_data if item["key"] == "_order_andreani_tracking_number"), None)
+        if order_andreani_tracking_number:
+            tracking_number = order_andreani_tracking_number
+            ticket = get_ticket_from_andreani(instance, tracking_number)
+            logger.info(f"Retrieved ticket from Andreani: {ticket}")
+            if ticket:
+                # attach the ticket to the order in Odoo
+                # create a attachment in Odoo for the order in odoo
+                order_client.create_attachment(
+                    model='sale.order',
+                    record_id=order_id,
+                    attachment_name=f"Andreani Ticket - {tracking_number}",
+                    attachment_content=ticket
+                )
         if existing_orders:
             logger.info(
                 f"Order already exists in Odoo: {existing_orders[0]['id']}")
             order_id = existing_orders[0]["id"]
             order_state = existing_orders[0]['state']
 
+            # Get ticket from Andreani if tracking number is available
+            if order_andreani_tracking_number:
+                tracking_number = order_andreani_tracking_number
+                ticket = get_ticket_from_andreani(instance, tracking_number)
+                logger.info(f"Retrieved ticket from Andreani: {ticket}")
+                if ticket:
+                    # attach the ticket to the order in Odoo
+                    # create a attachment in Odoo for the order in odoo
+                    order_client.create_attachment(
+                        model='sale.order',
+                        record_id=order_id,
+                        attachment_name=f"Andreani Ticket - {tracking_number}",
+                        attachment_content=ticket
+                    )
             # Only update if order is in draft state
             # Orders in other states (sent, sale, done, cancelled) have restrictions
             if order_state == 'draft':
@@ -1811,6 +1846,19 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                 f"Creating new sale order in Odoo for WooCommerce order {wc_order_id}")
             order_id = order_client.create(
                 model="sale.order", vals=sale_order_data)
+            if order_andreani_tracking_number:
+                tracking_number = order_andreani_tracking_number
+                ticket = get_ticket_from_andreani(instance, tracking_number)
+                logger.info(f"Retrieved ticket from Andreani: {ticket}")
+                if ticket:
+                    # attach the ticket to the order in Odoo
+                    # create a attachment in Odoo for the order in odoo
+                    order_client.create_attachment(
+                        model='sale.order',
+                        record_id=order_id,
+                        attachment_name=f"Andreani Ticket - {tracking_number}",
+                        attachment_content=ticket
+                    )
             if sale_order_data["state"] == "completed" or sale_order_data["state"] == "processing":
 
                 logger.info(
@@ -1851,8 +1899,8 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                         )
                     # send by email
                     send = order_client.send_invoice_email(
-                            invoice_id=invoice
-                        )
+                        invoice_id=invoice
+                    )
                 else:
                     logger.error(
                         f"No invoice found in Odoo for order {order_id}")

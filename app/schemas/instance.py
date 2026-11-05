@@ -33,7 +33,8 @@ class WooCommerceInstanceBase(BaseModel):
     odoo_journal_id: Optional[int] = None
     company_id: Optional[int] = None
     tax_included_id: Optional[int] = None
-
+    andreani_key: Optional[str] = None
+    andreani_base_url: Optional[str] = None
 class WooCommerceInstanceCreate(WooCommerceInstanceBase):
     pass
 
@@ -59,6 +60,8 @@ class WooCommerceInstanceUpdate(BaseModel):
     odoo_journal_id: Optional[int] = None
     company_id: Optional[int] = None
     tax_included_id: Optional[int] = None
+    andreani_key: Optional[str] = None
+    andreani_base_url: Optional[str] = None
 
 class WooCommerceInstance(WooCommerceInstanceBase):
     id: int

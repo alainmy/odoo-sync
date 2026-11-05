@@ -1,5 +1,6 @@
 
 
+import base64
 import datetime
 import json
 import os
@@ -343,4 +344,34 @@ class OrderClient(OdooClient):
             raise HTTPException(status_code=400, detail="Error getting view wizard in Odoo")
         
         return view_wizard
+    
+    def create_attachment(self, model='sale.order',
+                        record_id=None,
+                        attachment_name=None,
+                        attachment_content=None):
+        if not record_id:
+            logger.error("No record ID provided for creating attachment")
+            raise HTTPException(status_code=400, detail="No record ID provided for creating attachment")
+        if not attachment_name:
+            logger.error("No attachment name provided for creating attachment")
+            raise HTTPException(status_code=400, detail="No attachment name provided for creating attachment")
+        if not attachment_content:
+            logger.error("No attachment content provided for creating attachment")
+            raise HTTPException(status_code=400, detail="No attachment content provided for creating attachment")
+
+        attachment = self.create(
+            model="ir.attachment",
+            params={
+                "name": attachment_name,
+                "res_model": model,
+                'type': 'binary',
+                "res_id": record_id,
+                "datas": base64.b64encode(attachment_content),
+                'mimetype': 'application/pdf',
+            }
+        )
+        if not attachment or "result" not in attachment:
+            logger.error(f"Error creating attachment for record {record_id}: {attachment}")
+            raise HTTPException(status_code=400, detail="Error creating attachment in Odoo")
+        return attachment["result"]
         
