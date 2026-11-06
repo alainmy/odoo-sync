@@ -1847,8 +1847,9 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
         else:
             logger.info(
                 f"Creating new sale order in Odoo for WooCommerce order {wc_order_id}")
-            order_id = order_client.create(
+            order = order_client.create(
                 model="sale.order", vals=sale_order_data)
+            order_id = order["result"]["id"]
             if tracking_number:
                 ticket = get_ticket_from_andreani(instance, tracking_number)
                 logger.info(f"Retrieved ticket from Andreani: {ticket}")
@@ -1937,7 +1938,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                 )
                 order_client.message_post(
                     model='sale.order',
-                    record_id=order_id,
+                    record_id=order_id["result"]["id"],
                     body=body
                 )
             action = "created"
