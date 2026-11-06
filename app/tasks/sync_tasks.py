@@ -1429,7 +1429,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             # "l10n_latam_identification_type_id": dni["id"] if billing_dni else sigd["id"] if sigd else None,
             # "l10n_ar_afip_responsibility_type_id": final_consummer["id"] if billing_dni else afip["id"] if afip else None,
             "l10n_latam_identification_type_id": sigd["id"] if sigd else None,
-            "l10n_ar_afip_responsibility_type_id": afip["id"] if afip else None,
+            "l10n_ar_afip_responsibility_type_id": final_consummer["id"] if afip else None,
             "type": "invoice",
         }
         logger.info(f"Billing partner data: {billing_partner_data}")
@@ -1481,7 +1481,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                 # "l10n_latam_identification_type_id": dni["id"] if shipping_dni else sigd["id"] if sigd else None,
                 # "l10n_ar_afip_responsibility_type_id": final_consummer["id"] if shipping_dni else afip["id"] if afip else None,
                 "l10n_latam_identification_type_id": sigd["id"] if sigd else None,
-                "l10n_ar_afip_responsibility_type_id": afip["id"] if afip else None,
+                "l10n_ar_afip_responsibility_type_id": final_consummer["id"] if final_consummer else None,
                 "type": "delivery",
             }
             # if shipping_address.get("country", "") != billing_address.get("country", "")
