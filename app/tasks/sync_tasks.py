@@ -1953,7 +1953,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
 
     except Exception as exc:
         logger.error(f"Error syncing order to Odoo: {exc}", exc_info=True)
-        raise self.retry(exc=exc, countdown=2 ** self.request.retries)
+        raise exc
 
 
 @celery_app.task(
