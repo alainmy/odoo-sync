@@ -1927,14 +1927,11 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
 
             # message for write dni client in the chatter
             if shipping_dni and billing_dni:
-                body = markupsafe.Markup(
-                    "<p><strong>DNI de facturación</strong> — {billing_name}: <code>{billing_dni}</code><br/>"
-                    "<strong>DNI de envío</strong> — {shipping_name}: <code>{shipping_dni}</code></p>"
-                ).format(
-                    billing_name=billing_address['first_name'],
-                    billing_dni=billing_dni,
-                    shipping_name=shipping_address['first_name'],
-                    shipping_dni=shipping_dni,
+                body = (
+                    f"<p><strong>DNI de facturación</strong> — {billing_name}: "
+                    f"<code>{billing_dni}</code><br/>"
+                    f"<strong>DNI de envío</strong> — {shipping_name}: "
+                    f"<code>{shipping_dni}</code></p>"
                 )
                 order_client.message_post(
                     model='sale.order',
