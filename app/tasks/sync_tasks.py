@@ -1759,6 +1759,11 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                         send = order_client.send_invoice_email(
                             invoice_id=invoice
                         )
+                        # valdiate stock picking
+                        order = order_client.get_order(order_id=order_id, fields=['id', 'state', 'name','picking_ids'])
+                        pickings = order['picking_ids']
+                        for picking_id in pickings:
+                            order_client.validate_stock_picking(picking_id=picking_id)
                     else:
                         logger.error(
                             f"No invoice found in Odoo for order {order_id}")
@@ -1915,6 +1920,11 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                     send = order_client.send_invoice_email(
                         invoice_id=invoice
                     )
+                    # valdiate stock picking
+                    order = order_client.get_order(order_id=order_id, fields=['id', 'state', 'name','picking_ids'])
+                    pickings = order['picking_ids']
+                    for picking_id in pickings:
+                        order_client.validate_stock_picking(picking_id=picking_id)
                 else:
                     logger.error(
                         f"No invoice found in Odoo for order {order_id}")
@@ -1928,11 +1938,10 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             # message for write dni client in the chatter
             if shipping_dni and billing_dni:
                 body = (
-                    f"<p><strong>DNI de facturación</strong> — {billing_name}: "
-                    f"<code>{billing_dni}</code><br/>"
-                    f"<strong>DNI de envío</strong> — {shipping_address.get('first_name', '')}: "
-                    f"<code>{shipping_dni}</code></p>"
-                )
+                    f"""
+                        DNI de facturación — {billing_name}: {billing_dni}
+                        DNI de envío — {shipping_address.get('first_name', '')}: {shipping_dni}
+                    """)
                 order_client.message_post(
                     model='sale.order',
                     record_id=order_id,

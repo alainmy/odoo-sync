@@ -382,4 +382,34 @@ class OrderClient(OdooClient):
             logger.error(f"Error creating attachment for record {record_id}: {attachment}")
             raise HTTPException(status_code=400, detail="Error creating attachment in Odoo")
         return attachment["result"]
-        
+    
+    def get_order(self, model='sale.order', order_id=None,
+                  fields=['id', 'state', 'name']):
+        if not order_id:
+            logger.error("No order ID provided for getting order")
+            raise HTTPException(status_code=400, detail="No order ID provided for getting order")
+
+        order = self.search_read_sync(
+            model=model,
+            domain=[['id', '=', order_id]],
+            fields=fields
+        )
+        if not order:
+            logger.error(f"Order {order_id} not found in Odoo")
+            raise HTTPException(status_code=404, detail="Order not found in Odoo")
+        return order[0]
+    
+    def validate_stock_picking(self,picking_id):
+        if not picking_id:
+            logger.error("No picking ID provided for validating stock picking")
+            raise HTTPException(status_code=400, detail="No picking ID provided for validating stock picking")
+
+        result = self.cal_method(
+            model='stock.picking',
+            metod='button_validate',
+            params=[picking_id]
+        )
+        if not result:
+            logger.error(f"Error validating stock picking {picking_id}: {result}")
+            raise HTTPException(status_code=400, detail="Error validating stock picking in Odoo")
+        return result
