@@ -307,9 +307,8 @@ class OrderClient(OdooClient):
                 raise HTTPException(status_code=400, detail="No se encontró factura en Odoo")
             return invoice_payments[0]["reconciled_payment_ids"][0]
     
-    def send_invoice_email(self,send_invoice_email):
+    def send_invoice_email(self,invoice_id = None):
         
-        invoice_id = send_invoice_email.get("invoice_id")
         if not invoice_id:
             logger.error("No invoice ID provided for sending email")
             raise HTTPException(status_code=400, detail="No invoice ID provided for sending email")
