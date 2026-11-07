@@ -1272,7 +1272,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
         customer_id = order_data.get("customer_id")
         billing_address = order_data.get("billing", {})
         shipping_address = order_data.get("shipping", {})
-        customer_email = billing_address.get("email", "")
+        
 
         billing_odoo_partner_id = None
         shipping_odoo_partner_id = None
@@ -1289,9 +1289,6 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             fields=["id", 'state'],
             limit=1
         )
-        if not customer_email or not customer_id:
-            logger.warning(f"Order {wc_order_id} missing email or customer_id")
-            return {"success": False, "error": "Missing email or customer_id"}
 
         # Fetch WooCommerce customer info
         woo_customer = wc_request_with_logging(
@@ -1302,6 +1299,10 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
         woo_customer_id = woo_customer.get(
             "id") if woo_customer else customer_id
 
+        contact_data = woo_customer
+        customer_email = contact_data.get("email", "")
+        contact_name = f"{contact_data.get('first_name', '')} {contact_data.get('last_name', '')}".strip(
+                )
         # ========== STEP 1: Find or Create Contact (type='contact') ==========
         existing_contacts = client.search_read_sync(
             model="res.partner",
@@ -1309,8 +1310,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             fields=["id"]
         )
 
-        contact_name = f"{order_data.get('billing', {}).get('first_name', '')} {order_data.get('billing', {}).get('last_name', '')}".strip(
-        )
+        
 
         if existing_contacts:
             odoo_contact_id = existing_contacts[0]["id"]
@@ -1416,8 +1416,8 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
         final_consummer = final_consummer[0] if final_consummer else None
         billing_partner_data = {
             "parent_id": odoo_contact_id,
-            "name": billing_name,
-            "email": customer_email,
+            "name": billing_address.get('first_name', '') + ' ' + billing_address.get('last_name', ''),
+            "email": billing_address.get("email", ""),
             "phone": billing_address.get("phone", ""),
             "street": billing_address.get("address_1", ""),
             "street2": billing_address.get("address_2", ""),
@@ -1472,7 +1472,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
 
             shipping_partner_data = {
                 "parent_id": odoo_contact_id,
-                "name": shipping_name,
+                "name": shipping_address.get('first_name', '') + ' ' + shipping_address.get('last_name', ''),
                 "street": shipping_address.get("address_1", ""),
                 "street2": shipping_address.get("address_2", ""),
                 "city": shipping_address.get("city", ""),
@@ -1661,7 +1661,8 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             "checkout-draft": "draft"
         }
         sale_order_data = {
-            "partner_id": billing_odoo_partner_id,
+            "partner_id": odoo_contact_id,
+            "partner_invoice_id": billing_odoo_partner_id,
             "partner_shipping_id": shipping_odoo_partner_id,
             "client_order_ref": f"WC-{wc_order_id}",
             "note": order_data.get("customer_note", ""),
