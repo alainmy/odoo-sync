@@ -1318,7 +1318,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             limit=1
         )
         sigd = sigd[0] if sigd else None
-        
+
         # dni = client.search_read_sync(
         #     model="l10n_latam.identification.type",
         #     domain=[("name", "=", "DNI")],
@@ -1773,7 +1773,15 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                         pickings = order['picking_ids']
                         for picking_id in pickings:
                             order_client.validate_stock_picking(
-                                picking_id=picking_id)
+                                picking_id=picking_id,
+                                odoo_client=order_client,
+                                order_id=order_id
+                            )
+                            order_client.message_post(
+                                model='sale.order',
+                                record_id=order_id,
+                                body=f"Stock picking {picking_id} validated for order {order_id}"
+                            )
                     else:
                         logger.error(
                             f"No invoice found in Odoo for order {order_id}")
@@ -1936,7 +1944,10 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                     pickings = order['picking_ids']
                     for picking_id in pickings:
                         order_client.validate_stock_picking(
-                            picking_id=picking_id)
+                            picking_id=picking_id,
+                            odoo_client=order_client,
+                            order_id=order_id
+                        )
                 else:
                     logger.error(
                         f"No invoice found in Odoo for order {order_id}")

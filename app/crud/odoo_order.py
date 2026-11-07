@@ -144,8 +144,8 @@ class OrderClient(OdooClient):
             raise HTTPException(status_code=500, detail=str(e))
 
     # create invoice
-    def create_invoice(self, order_id,sale_journal_id=None):
-        
+    def create_invoice(self, order_id, sale_journal_id=None):
+
         order = self.search_read_sync(
             "sale.order",
             domain=[["id", "=", order_id]],
@@ -221,25 +221,27 @@ class OrderClient(OdooClient):
             params=[[invoice_id]]
         )
         return invoice_id, order
-    
+
     def create_invoice_payment(self, invoice_id, order,
                                journal_id=None,
                                payment_method_title=None):
-        
+
         domain = [["code", "=", "manual"]]
         if journal_id:
             domain.append(["journal_id", "=", journal_id])
-        payment_method_line_id= self.search_read_sync(
+        payment_method_line_id = self.search_read_sync(
             model="account.payment.method.line",
             domain=domain,
-            fields=["id", "name","journal_id"],
+            fields=["id", "name", "journal_id"],
             limit=1
         )
         if not payment_method_line_id:
             logger.error("No payment method found in Odoo")
-            raise HTTPException(status_code=400, detail="No se encontró método de pago manual en Odoo")
-        logger.info(f"Payment method line for invoice payment: {payment_method_line_id}")
-        
+            raise HTTPException(
+                status_code=400, detail="No se encontró método de pago manual en Odoo")
+        logger.info(
+            f"Payment method line for invoice payment: {payment_method_line_id}")
+
         # Calculamos NOSOTROS las líneas pendientes de ESTA factura (y solo esta),
         # en vez de confiar en active_model/active_ids del contexto, que puede
         # arrastrar ids de llamadas anteriores si el conector reutiliza el context.
@@ -249,24 +251,29 @@ class OrderClient(OdooClient):
                 ["move_id", "=", invoice_id],
                 ["account_type", "in", ["asset_receivable", "liability_payable"]],
             ],
-            fields=["id", "amount_residual", "amount_residual_currency", "currency_id"],
+            fields=["id", "amount_residual",
+                    "amount_residual_currency", "currency_id"],
         )
         pending_line_ids = [
             l["id"] for l in receivable_lines
             if (l.get("currency_id") and l.get("amount_residual_currency"))
             or (not l.get("currency_id") and l.get("amount_residual"))
         ]
-        logger.info(f"Pending receivable lines for invoice {invoice_id}: {pending_line_ids}")
+        logger.info(
+            f"Pending receivable lines for invoice {invoice_id}: {pending_line_ids}")
         if not pending_line_ids:
-            logger.error(f"Invoice {invoice_id} has no pending receivable lines")
-            raise HTTPException(status_code=400, detail=f"La factura {invoice_id} no tiene nada pendiente de pago")
+            logger.error(
+                f"Invoice {invoice_id} has no pending receivable lines")
+            raise HTTPException(
+                status_code=400, detail=f"La factura {invoice_id} no tiene nada pendiente de pago")
 
-        logger.info(f"Lines restricted to invoice {invoice_id}: {pending_line_ids}")
+        logger.info(
+            f"Lines restricted to invoice {invoice_id}: {pending_line_ids}")
 
         payment_wizard_id = self.create(
             model="account.payment.register",
             vals={
-               "journal_id": journal_id if journal_id else payment_method_line_id[0].get("journal_id")[0],
+                "journal_id": journal_id if journal_id else payment_method_line_id[0].get("journal_id")[0],
                 "partner_type": "customer",
                 "payment_method_line_id": payment_method_line_id[0].get("id"),
                 "amount": order.get("amount_total", 0),
@@ -279,11 +286,13 @@ class OrderClient(OdooClient):
                 'active_ids': pending_line_ids,
             }
         )
-        logger.info(f"Payment wizard ID for invoice payment: {payment_wizard_id}")
+        logger.info(
+            f"Payment wizard ID for invoice payment: {payment_wizard_id}")
         if not payment_wizard_id or "result" not in payment_wizard_id:
             logger.error(f"Error creando wizzard de pago: {payment_wizard_id}")
-            raise HTTPException(status_code=400, detail="Error creando wizzard de pago en Odoo")
-        
+            raise HTTPException(
+                status_code=400, detail="Error creando wizzard de pago en Odoo")
+
         register_payment = self.cal_method(
             "account.payment.register",
             "action_create_payments",
@@ -298,65 +307,75 @@ class OrderClient(OdooClient):
         invoice_payments = self.search_read_sync(
             model="account.move",
             domain=[["id", "=", invoice_id]],
-            fields=["id", "name", "state","reconciled_payment_ids"],
+            fields=["id", "name", "state", "reconciled_payment_ids"],
             limit=1
         )
         if invoice_payments:
             if not invoice_payments[0].get("reconciled_payment_ids"):
                 logger.error(f"No se encontró factura en Odoo")
-                raise HTTPException(status_code=400, detail="No se encontró factura en Odoo")
+                raise HTTPException(
+                    status_code=400, detail="No se encontró factura en Odoo")
             return invoice_payments[0]["reconciled_payment_ids"][0]
-    
-    def send_invoice_email(self,invoice_id = None):
-        
+
+    def send_invoice_email(self, invoice_id=None):
+
         if not invoice_id:
             logger.error("No invoice ID provided for sending email")
-            raise HTTPException(status_code=400, detail="No invoice ID provided for sending email")
+            raise HTTPException(
+                status_code=400, detail="No invoice ID provided for sending email")
 
         wizard = self.create(
             model="account.move.send.wizard",
-                        vals={
-                           "move_id": invoice_id
-                        },
-                        context={
-                            'active_model': 'account.move.line',
-                            'active_ids': [invoice_id],
-                        }
+            vals={
+                "move_id": invoice_id
+            },
+            context={
+                'active_model': 'account.move.line',
+                'active_ids': [invoice_id],
+            }
         )
-        logger.info(f"Send invoice email result for invoice {invoice_id}: {wizard}")
+        logger.info(
+            f"Send invoice email result for invoice {invoice_id}: {wizard}")
         if not wizard or "result" not in wizard:
-            logger.error(f"Error sending invoice email for invoice {invoice_id}: {wizard}")
-            raise HTTPException(status_code=400, detail="Error sending invoice email in Odoo")
-        
-        #get view wizar id and call tu method to open the email wizard
+            logger.error(
+                f"Error sending invoice email for invoice {invoice_id}: {wizard}")
+            raise HTTPException(
+                status_code=400, detail="Error sending invoice email in Odoo")
+
+        # get view wizar id and call tu method to open the email wizard
         view_wizard = self.cal_method(
             "account.move.send.wizard",
-                        "action_send_and_print",
-                        params=[wizard["result"]],
-                        context={
-                            'active_model': 'account.move.line',
-                            'active_ids': invoice_id,
-                        }
+            "action_send_and_print",
+            params=[wizard["result"]],
+            context={
+                'active_model': 'account.move.line',
+                'active_ids': invoice_id,
+            }
         )
         if not view_wizard:
             logger.error(f"Error getting view wizard for invoice {invoice_id}")
-            raise HTTPException(status_code=400, detail="Error getting view wizard in Odoo")
-        
+            raise HTTPException(
+                status_code=400, detail="Error getting view wizard in Odoo")
+
         return view_wizard
-    
+
     def create_attachment(self, model='sale.order',
-                        record_id=None,
-                        attachment_name=None,
-                        attachment_content=None):
+                          record_id=None,
+                          attachment_name=None,
+                          attachment_content=None):
         if not record_id:
             logger.error("No record ID provided for creating attachment")
-            raise HTTPException(status_code=400, detail="No record ID provided for creating attachment")
+            raise HTTPException(
+                status_code=400, detail="No record ID provided for creating attachment")
         if not attachment_name:
             logger.error("No attachment name provided for creating attachment")
-            raise HTTPException(status_code=400, detail="No attachment name provided for creating attachment")
+            raise HTTPException(
+                status_code=400, detail="No attachment name provided for creating attachment")
         if not attachment_content:
-            logger.error("No attachment content provided for creating attachment")
-            raise HTTPException(status_code=400, detail="No attachment content provided for creating attachment")
+            logger.error(
+                "No attachment content provided for creating attachment")
+            raise HTTPException(
+                status_code=400, detail="No attachment content provided for creating attachment")
 
         # Ensure content is bytes
         content_bytes = attachment_content.content
@@ -378,15 +397,18 @@ class OrderClient(OdooClient):
             }
         )
         if not attachment or "result" not in attachment:
-            logger.error(f"Error creating attachment for record {record_id}: {attachment}")
-            raise HTTPException(status_code=400, detail="Error creating attachment in Odoo")
+            logger.error(
+                f"Error creating attachment for record {record_id}: {attachment}")
+            raise HTTPException(
+                status_code=400, detail="Error creating attachment in Odoo")
         return attachment["result"]
-    
+
     def get_order(self, model='sale.order', order_id=None,
                   fields=['id', 'state', 'name']):
         if not order_id:
             logger.error("No order ID provided for getting order")
-            raise HTTPException(status_code=400, detail="No order ID provided for getting order")
+            raise HTTPException(
+                status_code=400, detail="No order ID provided for getting order")
 
         order = self.search_read_sync(
             model=model,
@@ -395,20 +417,30 @@ class OrderClient(OdooClient):
         )
         if not order:
             logger.error(f"Order {order_id} not found in Odoo")
-            raise HTTPException(status_code=404, detail="Order not found in Odoo")
+            raise HTTPException(
+                status_code=404, detail="Order not found in Odoo")
         return order[0]
-    
-    def validate_stock_picking(self,picking_id):
+
+    def validate_stock_picking(self, picking_id, odoo_client: OdooClient, order_id: int):
         if not picking_id:
             logger.error("No picking ID provided for validating stock picking")
-            raise HTTPException(status_code=400, detail="No picking ID provided for validating stock picking")
+            raise HTTPException(
+                status_code=400, detail="No picking ID provided for validating stock picking")
 
         result = self.cal_method(
             model='stock.picking',
             metod='button_validate',
             params=[picking_id]
         )
+        logger.info(f"Validating stock picking {picking_id} for order {order_id}")
         if not result:
-            logger.error(f"Error validating stock picking {picking_id}: {result}")
-            raise HTTPException(status_code=400, detail="Error validating stock picking in Odoo")
+            logger.error(
+                f"Error validating stock picking {picking_id}: {result}")
+            raise HTTPException(
+                status_code=400, detail="Error validating stock picking in Odoo")
+        odoo_client.message_post(
+            model='sale.order',
+            record_id=order_id,
+            body=f"Stock picking {picking_id} validated"
+        )
         return result
