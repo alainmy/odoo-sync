@@ -965,12 +965,12 @@ async def get_payment_journals(
         instance_id = request.headers.get("activeinstance") or request.headers.get("active_instance")
         active_instance = crud_instance.get_active_instance(
             db, user_id=current_user.id, instance_id=instance_id)
-        odoo_config = {
-            "url": active_instance.odoo_url,
-            "db": active_instance.odoo_db,
-            "username": active_instance.odoo_username,
-            "password": active_instance.odoo_password
-        }
+        odoo_config = OodooConfig(
+            url=active_instance.odoo_url,
+            db=active_instance.odoo_db,
+            username=active_instance.odoo_username,
+            password=active_instance.odoo_password
+        )
     odoo_config.company_id = None
     odoo_client = OdooClient(**odoo_config.model_dump())
     payment_journals = odoo_client.search_read_sync(
@@ -1007,12 +1007,12 @@ async def get_companies(
         instance_id = request.headers.get("activeinstance") or request.headers.get("active_instance")
         active_instance = crud_instance.get_active_instance(
             db, user_id=current_user.id, instance_id=instance_id)
-        odoo_config = {
-            "url": active_instance.odoo_url,
-            "db": active_instance.odoo_db,
-            "username": active_instance.odoo_username,
-            "password": active_instance.odoo_password
-        }
+        odoo_config = OodooConfig(
+                    url=active_instance.odoo_url,
+                    db=active_instance.odoo_db,
+                    username=active_instance.odoo_username,
+                    password=active_instance.odoo_password
+                )
     odoo_config.company_id = None
     odoo_client = OdooClient(**odoo_config.model_dump())
     uid = await odoo_client.odoo_authenticate()
