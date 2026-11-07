@@ -961,9 +961,10 @@ async def get_payment_journals(
     Obtener lista de métodos de pago de WooCommerce.
     """
     odoo_client = None
-    if not odoo_config.url:
+    if not odoo_config:
+        instance_id = request.headers.get("activeinstance") or request.headers.get("active_instance")
         active_instance = crud_instance.get_active_instance(
-            db, user_id=current_user.id)
+            db, user_id=current_user.id, instance_id=instance_id)
         odoo_config = {
             "url": active_instance.odoo_url,
             "db": active_instance.odoo_db,
@@ -1002,9 +1003,10 @@ async def get_companies(
     Obtener lista de empresas de Odoo.
     """
     odoo_client = None
-    if not odoo_config.url:
+    if not odoo_config:
+        instance_id = request.headers.get("activeinstance") or request.headers.get("active_instance")
         active_instance = crud_instance.get_active_instance(
-            db, user_id=current_user.id)
+            db, user_id=current_user.id, instance_id=instance_id)
         odoo_config = {
             "url": active_instance.odoo_url,
             "db": active_instance.odoo_db,
