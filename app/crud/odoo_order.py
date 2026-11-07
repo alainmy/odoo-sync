@@ -320,7 +320,7 @@ class OrderClient(OdooClient):
                         },
                         context={
                             'active_model': 'account.move.line',
-                            'active_ids': invoice_id,
+                            'active_ids': [invoice_id],
                         }
         )
         logger.info(f"Send invoice email result for invoice {invoice_id}: {wizard}")
