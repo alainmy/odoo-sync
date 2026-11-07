@@ -1272,7 +1272,6 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
         customer_id = order_data.get("customer_id")
         billing_address = order_data.get("billing", {})
         shipping_address = order_data.get("shipping", {})
-        
 
         billing_odoo_partner_id = None
         shipping_odoo_partner_id = None
@@ -1302,7 +1301,8 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
         contact_data = woo_customer
         customer_email = contact_data.get("email", "")
         contact_name = f"{contact_data.get('first_name', '')} {contact_data.get('last_name', '')}".strip(
-                )
+        )
+
         # ========== STEP 1: Find or Create Contact (type='contact') ==========
         existing_contacts = client.search_read_sync(
             model="res.partner",
@@ -1310,7 +1310,37 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             fields=["id"]
         )
 
+        sigd = None
+        sigd = client.search_read_sync(
+            model="l10n_latam.identification.type",
+            domain=[("id", "=", 43)],
+            fields=["id", "name"],
+            limit=1
+        )
+        sigd = sigd[0] if sigd else None
         
+        # dni = client.search_read_sync(
+        #     model="l10n_latam.identification.type",
+        #     domain=[("name", "=", "DNI")],
+        #     fields=["id", "name"],
+        #     limit=1
+        # )
+        # dni = dni[0] if dni else None
+        # responsability type (AFIP)
+        afip = client.search_read_sync(
+            model="l10n_ar.afip.responsibility.type",
+            domain=[("code", "=", "8")],
+            fields=["id", "name"],
+            limit=1
+        )
+        final_consummer = client.search_read_sync(
+            model="l10n_ar.afip.responsibility.type",
+            domain=[("code", "=", "5")],
+            fields=["id", "name"],
+            limit=1
+        )
+        afip = afip[0] if afip else None
+        final_consummer = final_consummer[0] if final_consummer else None
 
         if existing_contacts:
             odoo_contact_id = existing_contacts[0]["id"]
@@ -1319,7 +1349,11 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             # Update existing contact data in Odoo
             client.write(
                 model="res.partner",
-                vals={"name": contact_name, "email": customer_email},
+                vals={"name": contact_name,
+                      "email": customer_email,
+                      "l10n_latam_identification_type_id": sigd["id"] if sigd else None,
+                      "l10n_ar_afip_responsibility_type_id": final_consummer["id"] if final_consummer else None,
+                      },
                 record_id=odoo_contact_id
             )
             logger.info(f"Updated existing contact in Odoo: {odoo_contact_id}")
@@ -1328,7 +1362,9 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             contact_data = {
                 "name": contact_name,
                 "email": customer_email,
-                "type": "contact"
+                "type": "contact",
+                "l10n_latam_identification_type_id": sigd["id"] if sigd else None,
+                "l10n_ar_afip_responsibility_type_id": final_consummer["id"] if final_consummer else None,
             }
             logger.info(
                 f"Creating new contact in Odoo with data: {contact_data}")
@@ -1384,36 +1420,7 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
         if shipping_dni:
             shipping_dni = next(
                 (item["value"] for item in shipping_dni if item["key"] == "_shipping_dni"), None)
-        sigd = None
-        sigd = client.search_read_sync(
-            model="l10n_latam.identification.type",
-            domain=[("id", "=", 43)],
-            fields=["id", "name"],
-            limit=1
-        )
-        sigd = sigd[0] if sigd else None
-        dni = client.search_read_sync(
-            model="l10n_latam.identification.type",
-            domain=[("name", "=", "DNI")],
-            fields=["id", "name"],
-            limit=1
-        )
-        dni = dni[0] if dni else None
-        # responsability type (AFIP)
-        afip = client.search_read_sync(
-            model="l10n_ar.afip.responsibility.type",
-            domain=[("code", "=", "8")],
-            fields=["id", "name"],
-            limit=1
-        )
-        final_consummer = client.search_read_sync(
-            model="l10n_ar.afip.responsibility.type",
-            domain=[("code", "=", "5")],
-            fields=["id", "name"],
-            limit=1
-        )
-        afip = afip[0] if afip else None
-        final_consummer = final_consummer[0] if final_consummer else None
+
         billing_partner_data = {
             "parent_id": odoo_contact_id,
             "name": billing_address.get('first_name', '') + ' ' + billing_address.get('last_name', ''),
@@ -1425,11 +1432,11 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
             "country_id": country_id,
             "state_id": state_id,
             "zip": billing_address.get("postcode", ""),
-            "vat": billing_dni if billing_dni else "",
-            # "l10n_latam_identification_type_id": dni["id"] if billing_dni else sigd["id"] if sigd else None,
-            # "l10n_ar_afip_responsibility_type_id": final_consummer["id"] if billing_dni else afip["id"] if afip else None,
-            "l10n_latam_identification_type_id": sigd["id"] if sigd else None,
-            "l10n_ar_afip_responsibility_type_id": final_consummer["id"] if afip else None,
+            # "vat": billing_dni if billing_dni else "",
+            # # "l10n_latam_identification_type_id": dni["id"] if billing_dni else sigd["id"] if sigd else None,
+            # # "l10n_ar_afip_responsibility_type_id": final_consummer["id"] if billing_dni else afip["id"] if afip else None,
+            # "l10n_latam_identification_type_id": sigd["id"] if sigd else None,
+            # "l10n_ar_afip_responsibility_type_id": final_consummer["id"] if afip else None,
             "type": "invoice",
         }
         logger.info(f"Billing partner data: {billing_partner_data}")
@@ -1477,11 +1484,11 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                 "street2": shipping_address.get("address_2", ""),
                 "city": shipping_address.get("city", ""),
                 "zip": shipping_address.get("postcode", ""),
-                "vat": shipping_dni if shipping_dni else "",
+                # "vat": shipping_dni if shipping_dni else "",
                 # "l10n_latam_identification_type_id": dni["id"] if shipping_dni else sigd["id"] if sigd else None,
                 # "l10n_ar_afip_responsibility_type_id": final_consummer["id"] if shipping_dni else afip["id"] if afip else None,
-                "l10n_latam_identification_type_id": sigd["id"] if sigd else None,
-                "l10n_ar_afip_responsibility_type_id": final_consummer["id"] if final_consummer else None,
+                # "l10n_latam_identification_type_id": sigd["id"] if sigd else None,
+                # "l10n_ar_afip_responsibility_type_id": final_consummer["id"] if final_consummer else None,
                 "type": "delivery",
             }
             # if shipping_address.get("country", "") != billing_address.get("country", "")
@@ -1761,10 +1768,12 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                             invoice_id=invoice
                         )
                         # valdiate stock picking
-                        order = order_client.get_order(order_id=order_id, fields=['id', 'state', 'name','picking_ids'])
+                        order = order_client.get_order(order_id=order_id, fields=[
+                                                       'id', 'state', 'name', 'picking_ids'])
                         pickings = order['picking_ids']
                         for picking_id in pickings:
-                            order_client.validate_stock_picking(picking_id=picking_id)
+                            order_client.validate_stock_picking(
+                                picking_id=picking_id)
                     else:
                         logger.error(
                             f"No invoice found in Odoo for order {order_id}")
@@ -1922,10 +1931,12 @@ def sync_order_to_odoo(self, order_data: Dict[str, Any], instance_id: int) -> Di
                         invoice_id=invoice
                     )
                     # valdiate stock picking
-                    order = order_client.get_order(order_id=order_id, fields=['id', 'state', 'name','picking_ids'])
+                    order = order_client.get_order(order_id=order_id, fields=[
+                                                   'id', 'state', 'name', 'picking_ids'])
                     pickings = order['picking_ids']
                     for picking_id in pickings:
-                        order_client.validate_stock_picking(picking_id=picking_id)
+                        order_client.validate_stock_picking(
+                            picking_id=picking_id)
                 else:
                     logger.error(
                         f"No invoice found in Odoo for order {order_id}")
