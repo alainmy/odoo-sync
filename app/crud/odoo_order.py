@@ -315,7 +315,7 @@ class OrderClient(OdooClient):
 
         wizard = self.create(
             model="account.move.send.wizard",
-                        params={
+                        vals={
                            "invoice_id": invoice_id
                         },
                         context={
